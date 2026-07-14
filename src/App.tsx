@@ -18,6 +18,7 @@ import ThemePage from './apps/theme/pages/ThemePage';
 import ChatPage from './apps/chat/pages/ChatPage';
 import SettingsPage from './apps/settings/pages/SettingsPage';
 import { useAppStore } from './store/app-store';
+import { usePersistence } from './services/persistence/use-persistence';
 
 // Placeholder stub pages
 const Lorebook = () => <div>Lorebook APP — Phase 3</div>;
@@ -50,6 +51,9 @@ function AppRoutes() {
 export default function App() {
   const theme = useAppStore((s) => s.theme);
   const registerApp = useAppStore((s) => s.registerApp);
+
+  // 数据持久化（加载已保存数据 + 自动防抖保存）
+  usePersistence();
 
   // 注册默认 APP
   useEffect(() => {
