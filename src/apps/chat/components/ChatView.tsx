@@ -4,7 +4,10 @@ import type { Message } from '../types';
 
 function MessageBubble({ msg }: { msg: Message }) {
   return (
-    <div className={`chat-bubble chat-bubble--${msg.role}`}>
+    <div
+      id={`msg-${msg.id}`}
+      className={`chat-bubble chat-bubble--${msg.role}`}
+    >
       {msg.reasoning && (
         <details className="chat-bubble__reasoning">
           <summary>思考链</summary>

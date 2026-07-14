@@ -1243,3 +1243,62 @@ body {
   color: var(--app-text);
   text-align: center;
 }
+
+/* ============================================
+   对话内搜索
+   ============================================ */
+.inline-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.inline-search__input-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--app-bg-card);
+  border: 1px solid var(--app-border);
+  border-radius: 20px;
+  padding: 6px 12px;
+}
+
+.inline-search__icon {
+  font-size: 14px;
+}
+
+.inline-search__input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 14px;
+  color: var(--app-text);
+  font-family: inherit;
+}
+
+.inline-search__count {
+  font-size: 12px;
+  color: var(--app-text-secondary);
+  white-space: nowrap;
+}
+
+.inline-search__nav {
+  background: none;
+  border: none;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--app-primary);
+  padding: 2px;
+}
+
+.inline-search__close {
+  background: none;
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+  color: var(--app-text-secondary);
+  padding: 4px;
+}

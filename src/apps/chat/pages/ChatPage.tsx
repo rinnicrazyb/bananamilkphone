@@ -6,6 +6,7 @@ import ChatInput from '../components/ChatInput';
 import ConversationList from '../components/ConversationList';
 import AgentSettingsPanel from '../components/AgentSettings';
 import FunctionBox from '../components/FunctionBox';
+import InlineSearch from '../components/InlineSearch';
 
 export default function ChatPage() {
   const activeConversationId = useChatStore((s) => s.activeConversationId);
@@ -16,6 +17,7 @@ export default function ChatPage() {
   const showAgentSettings = useChatStore((s) => s.showAgentSettings);
   const setShowAgentSettings = useChatStore((s) => s.setShowAgentSettings);
   const [showFunctionBox, setShowFunctionBox] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
 
   const touchStartX = useRef(0);
 
@@ -44,29 +46,45 @@ export default function ChatPage() {
           onTouchEnd={handleTouchEnd}
         >
           <div className="chat-page__header">
-            <button
-              className="back-btn"
-              onClick={() => setActiveConversation(null)}
-            >
-              ← 返回
-            </button>
-            <h1>{activeConv.title}</h1>
-            <div className="chat-page__header-right">
-              <button
-                className="chat-page__icon-btn"
-                onClick={toggleConversationList}
-                title="对话列表"
-              >
-                ☰
-              </button>
-              <button
-                className="chat-page__icon-btn"
-                onClick={() => setShowAgentSettings(true)}
-                title="智能体设定"
-              >
-                ⋯
-              </button>
-            </div>
+            {!showSearch ? (
+              <>
+                <button
+                  className="back-btn"
+                  onClick={() => setActiveConversation(null)}
+                >
+                  ← 返回
+                </button>
+                <h1>{activeConv.title}</h1>
+                <div className="chat-page__header-right">
+                  <button
+                    className="chat-page__icon-btn"
+                    onClick={() => setShowSearch(true)}
+                    title="搜索"
+                  >
+                    🔍
+                  </button>
+                  <button
+                    className="chat-page__icon-btn"
+                    onClick={toggleConversationList}
+                    title="对话列表"
+                  >
+                    ☰
+                  </button>
+                  <button
+                    className="chat-page__icon-btn"
+                    onClick={() => setShowAgentSettings(true)}
+                    title="智能体设定"
+                  >
+                    ⋯
+                  </button>
+                </div>
+              </>
+            ) : (
+              <InlineSearch
+                conversationId={activeConv.id}
+                onClose={() => setShowSearch(false)}
+              />
+            )}
           </div>
           <ChatView />
           <ChatInput onPlusClick={() => setShowFunctionBox(true)} />
