@@ -26,20 +26,7 @@ interface ChatState {
 }
 
 export const useChatStore = create<ChatState>((set) => ({
-  agents: [
-    {
-      id: 'default-agent',
-      name: 'AI 助手',
-      avatar: '🤖',
-      unreadCount: 0,
-      settings: {
-        systemPrompt: '你是AI助手，一个友好的智能聊天伙伴。',
-        model: '',
-        temperature: undefined,
-        topP: undefined,
-      },
-    },
-  ],
+  agents: [],
   conversations: [],
   messages: {},
   activeConversationId: null,

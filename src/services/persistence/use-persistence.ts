@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useChatStore } from '../../apps/chat/store/chat-store';
-import { loadData, saveDataDebounced, saveDataImmediately } from './index';
+import { clearData, saveDataDebounced, saveDataImmediately } from './index';
 
 /**
  * 数据持久化 Hook —— 在应用根组件中使用一次
@@ -8,21 +8,8 @@ import { loadData, saveDataDebounced, saveDataImmediately } from './index';
  */
 export function usePersistence() {
   useEffect(() => {
-    // 加载已保存的数据
-    const saved = loadData();
-    if (saved) {
-      const store = useChatStore.getState();
-      if (saved.agents.length > 0) {
-        store.setAgents(saved.agents);
-      }
-      // 恢复对话和消息
-      if (saved.conversations.length > 0) {
-        useChatStore.setState({
-          conversations: saved.conversations,
-          messages: saved.messages,
-        });
-      }
-    }
+    // 清除旧缓存（升级后旧数据会干扰）
+    clearData();
 
     // 订阅 store 变化，带防抖写入
     const unsub = useChatStore.subscribe(
