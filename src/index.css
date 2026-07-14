@@ -1118,6 +1118,26 @@ body {
   font-style: italic;
 }
 
+.settings-avatar-preview {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--app-border);
+}
+
+.settings-field__sub {
+  margin-top: 4px;
+  padding: 8px 12px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  background: var(--app-bg-card);
+  color: var(--app-text);
+  font-size: 13px;
+  font-family: var(--app-font-family);
+  outline: none;
+}
+
 .agent-settings__danger {
   padding-top: 8px;
   border-top: 1px solid var(--app-border);
