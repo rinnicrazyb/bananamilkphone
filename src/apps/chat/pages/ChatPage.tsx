@@ -3,6 +3,7 @@ import AgentList from '../components/AgentList';
 import ChatView from '../components/ChatView';
 import ChatInput from '../components/ChatInput';
 import ConversationList from '../components/ConversationList';
+import AgentSettingsPanel from '../components/AgentSettings';
 
 export default function ChatPage() {
   const activeConversationId = useChatStore((s) => s.activeConversationId);
@@ -10,6 +11,8 @@ export default function ChatPage() {
   const setActiveConversation = useChatStore((s) => s.setActiveConversation);
   const showConversationList = useChatStore((s) => s.showConversationList);
   const toggleConversationList = useChatStore((s) => s.toggleConversationList);
+  const showAgentSettings = useChatStore((s) => s.showAgentSettings);
+  const setShowAgentSettings = useChatStore((s) => s.setShowAgentSettings);
 
   const activeConv = conversations.find((c) => c.id === activeConversationId);
 
@@ -34,13 +37,20 @@ export default function ChatPage() {
               >
                 ☰
               </button>
+              <button
+                className="chat-page__icon-btn"
+                onClick={() => setShowAgentSettings(true)}
+                title="智能体设定"
+              >
+                ⋯
+              </button>
             </div>
           </div>
           <ChatView />
           <ChatInput />
         </div>
 
-        {/* 右滑出对话列表面板 */}
+        {/* 对话列表面板 */}
         {showConversationList && (
           <div className="chat-page__overlay" onClick={toggleConversationList}>
             <div
@@ -51,6 +61,9 @@ export default function ChatPage() {
             </div>
           </div>
         )}
+
+        {/* 智能体设定弹窗 */}
+        {showAgentSettings && <AgentSettingsPanel />}
       </div>
     );
   }

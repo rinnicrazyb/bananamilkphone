@@ -1,13 +1,14 @@
 import { create } from 'zustand';
-import type { Agent, Conversation, Message } from '../types';
+import type { Agent, AgentSettings, Conversation, Message } from '../types';
 
 interface ChatState {
   agents: Agent[];
   conversations: Conversation[];
-  messages: Record<string, Message[]>; // conversationId → messages
+  messages: Record<string, Message[]>;
   activeConversationId: string | null;
-  showConversationList: boolean; // 对话列表面板
-  searchQuery: string; // 全局搜索
+  showConversationList: boolean;
+  searchQuery: string;
+  showAgentSettings: boolean;
 
   // Actions
   setAgents: (agents: Agent[]) => void;
@@ -19,6 +20,9 @@ interface ChatState {
   deleteConversation: (id: string) => void;
   toggleConversationList: () => void;
   setSearchQuery: (query: string) => void;
+  updateAgentSettings: (agentId: string, settings: Partial<AgentSettings>) => void;
+  updateAgent: (agentId: string, data: Partial<Pick<Agent, 'name' | 'avatar'>>) => void;
+  setShowAgentSettings: (show: boolean) => void;
 }
 
 export const useChatStore = create<ChatState>((set) => ({
@@ -28,6 +32,12 @@ export const useChatStore = create<ChatState>((set) => ({
       name: '香蕉牛奶',
       avatar: '🥛',
       unreadCount: 0,
+      settings: {
+        systemPrompt: '你是香蕉牛奶，一个温柔体贴的AI伴侣。',
+        model: '',
+        temperature: undefined,
+        topP: undefined,
+      },
     },
   ],
   conversations: [],
@@ -35,6 +45,7 @@ export const useChatStore = create<ChatState>((set) => ({
   activeConversationId: null,
   showConversationList: false,
   searchQuery: '',
+  showAgentSettings: false,
 
   setAgents: (agents) => set({ agents }),
 
@@ -48,7 +59,6 @@ export const useChatStore = create<ChatState>((set) => ({
 
   addMessage: (conversationId, msg) =>
     set((state) => {
-      // 同时更新对话的更新时间
       const conversations = state.conversations.map((c) =>
         c.id === conversationId ? { ...c, updatedAt: Date.now() } : c
       );
@@ -99,4 +109,22 @@ export const useChatStore = create<ChatState>((set) => ({
     })),
 
   setSearchQuery: (query) => set({ searchQuery: query }),
+
+  updateAgentSettings: (agentId, settings) =>
+    set((state) => ({
+      agents: state.agents.map((a) =>
+        a.id === agentId
+          ? { ...a, settings: { ...a.settings, ...settings } }
+          : a
+      ),
+    })),
+
+  updateAgent: (agentId, data) =>
+    set((state) => ({
+      agents: state.agents.map((a) =>
+        a.id === agentId ? { ...a, ...data } : a
+      ),
+    })),
+
+  setShowAgentSettings: (show) => set({ showAgentSettings: show }),
 }));

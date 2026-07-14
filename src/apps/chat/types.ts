@@ -1,5 +1,13 @@
 /** 聊天相关类型定义 */
 
+/** 智能体设置（可选，覆盖全局 LLM 配置） */
+export interface AgentSettings {
+  model?: string;
+  temperature?: number;
+  topP?: number;
+  systemPrompt: string;
+}
+
 /** 智能体 */
 export interface Agent {
   id: string;
@@ -7,6 +15,7 @@ export interface Agent {
   avatar: string;
   lastContactTime?: number;
   unreadCount: number;
+  settings: AgentSettings;
 }
 
 /** 对话 */
