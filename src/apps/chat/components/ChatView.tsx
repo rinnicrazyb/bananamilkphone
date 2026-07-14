@@ -1,4 +1,3 @@
-import { useVirtualizer } from '@tanstack/react-virtual';
 import { useRef, useEffect } from 'react';
 import { useChatStore } from '../store/chat-store';
 import type { Message } from '../types';
@@ -35,54 +34,28 @@ export default function ChatView() {
   const messages = useChatStore((s) =>
     activeConversationId ? s.messages[activeConversationId] || [] : []
   );
-  const parentRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
-  // 按时间正序显示（最旧在上，最新在下）
   const sorted = [...messages].sort((a, b) => a.timestamp - b.timestamp);
 
-  const virtualizer = useVirtualizer({
-    count: sorted.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => 80,
-    overscan: 10,
-  });
-
-  // 新消息时自动滚到底部
+  // 新消息自动滚到底
   const lastMsgId = messages.length > 0 ? messages[messages.length - 1].id : null;
   useEffect(() => {
-    if (parentRef.current) {
-      parentRef.current.scrollTop = parentRef.current.scrollHeight;
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [lastMsgId]);
 
   return (
-    <div className="chat-view" ref={parentRef}>
-      <div
-        className="chat-view__inner"
-        style={{
-          height: `${virtualizer.getTotalSize()}px`,
-          position: 'relative',
-        }}
-      >
-        {virtualizer.getVirtualItems().map((virtualItem) => {
-          const msg = sorted[virtualItem.index];
-          if (!msg) return null;
-          return (
-            <div
-              key={msg.id}
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                transform: `translateY(${virtualItem.start}px)`,
-              }}
-            >
-              <MessageBubble msg={msg} />
-            </div>
-          );
-        })}
-      </div>
+    <div className="chat-view" ref={scrollRef}>
+      {sorted.length === 0 && (
+        <div className="chat-view__empty">
+          开始对话吧
+        </div>
+      )}
+      {sorted.map((msg) => (
+        <MessageBubble key={msg.id} msg={msg} />
+      ))}
     </div>
   );
 }
