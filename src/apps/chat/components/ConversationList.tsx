@@ -15,6 +15,15 @@ export default function ConversationList() {
   const [editTitle, setEditTitle] = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
 
+  // 从当前活跃对话中获取智能体 ID
+  const activeConv = conversations.find((c) => c.id === activeConversationId);
+  const currentAgentId = activeConv?.agentId;
+
+  // 只显示当前智能体的对话
+  const agentConversations = conversations.filter(
+    (c) => c.agentId === currentAgentId
+  );
+
   const handleStartRename = (id: string, currentTitle: string) => {
     setEditingId(id);
     setEditTitle(currentTitle);
@@ -28,19 +37,21 @@ export default function ConversationList() {
   };
 
   const handleNewConversation = () => {
+    if (!currentAgentId) return;
     const conv = {
       id: `conv-${Date.now()}`,
-      agentId: 'default-agent',
+      agentId: currentAgentId,
       title: '新对话',
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
     addConversation(conv);
     setActiveConversation(conv.id);
+    toggleConversationList();
   };
 
-  // 按搜索过滤 + 按时间排序（最新的在前）
-  const filtered = conversations
+  // 按搜索过滤 + 按时间排序
+  const filtered = agentConversations
     .filter((c) =>
       searchQuery
         ? c.title.toLowerCase().includes(searchQuery.toLowerCase())
@@ -78,7 +89,10 @@ export default function ConversationList() {
           >
             <div
               className="conv-item__main"
-              onClick={() => setActiveConversation(conv.id)}
+              onClick={() => {
+                setActiveConversation(conv.id);
+                toggleConversationList();
+              }}
             >
               {editingId === conv.id ? (
                 <input
@@ -128,7 +142,6 @@ export default function ConversationList() {
               </button>
             </div>
 
-            {/* 删除确认 */}
             {showDeleteConfirm === conv.id && (
               <div className="conv-item__confirm">
                 <span>确认删除该对话？</span>
