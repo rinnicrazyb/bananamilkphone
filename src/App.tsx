@@ -3,10 +3,10 @@ import { useEffect } from 'react';
 import { themeEngine } from './services/theme-engine/index';
 import LauncherPage from './apps/launcher/pages/LauncherPage';
 import ThemePage from './apps/theme/pages/ThemePage';
+import ChatPage from './apps/chat/pages/ChatPage';
 import { useAppStore } from './store/app-store';
 
 // Placeholder stub pages
-const Chat = () => <div>Chat APP — Phase 2</div>;
 const Settings = () => <div>Settings APP — Phase 3</div>;
 const Lorebook = () => <div>Lorebook APP — Phase 3</div>;
 const MemoryGallery = () => <div>Memory Gallery — 待开发</div>;
@@ -21,7 +21,7 @@ function AppRoutes() {
     <Routes>
       <Route path="/" element={<LauncherPage />} />
       <Route path="/theme" element={<ThemePage />} />
-      <Route path="/chat" element={<Chat />} />
+      <Route path="/chat" element={<ChatPage />} />
       <Route path="/settings" element={<Settings />} />
       <Route path="/lorebook" element={<Lorebook />} />
       <Route path="/memory-gallery" element={<MemoryGallery />} />
