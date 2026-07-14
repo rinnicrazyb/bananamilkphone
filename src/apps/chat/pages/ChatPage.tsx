@@ -1,3 +1,4 @@
+import { useRef, useCallback } from 'react';
 import { useChatStore } from '../store/chat-store';
 import AgentList from '../components/AgentList';
 import ChatView from '../components/ChatView';
@@ -14,13 +15,33 @@ export default function ChatPage() {
   const showAgentSettings = useChatStore((s) => s.showAgentSettings);
   const setShowAgentSettings = useChatStore((s) => s.setShowAgentSettings);
 
+  const touchStartX = useRef(0);
+
   const activeConv = conversations.find((c) => c.id === activeConversationId);
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+  }, []);
+
+  const handleTouchEnd = useCallback(
+    (e: React.TouchEvent) => {
+      const dx = e.changedTouches[0].clientX - touchStartX.current;
+      // 右滑超过 60px 打开对话列表
+      if (dx > 60 && !showConversationList) {
+        toggleConversationList();
+      }
+    },
+    [showConversationList, toggleConversationList]
+  );
 
   if (activeConv) {
     return (
       <div className="chat-page">
-        {/* 聊天界面主体 */}
-        <div className="chat-page__main">
+        <div
+          className="chat-page__main"
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+        >
           <div className="chat-page__header">
             <button
               className="back-btn"
@@ -50,7 +71,6 @@ export default function ChatPage() {
           <ChatInput />
         </div>
 
-        {/* 对话列表面板 */}
         {showConversationList && (
           <div className="chat-page__overlay" onClick={toggleConversationList}>
             <div
@@ -62,7 +82,6 @@ export default function ChatPage() {
           </div>
         )}
 
-        {/* 智能体设定弹窗 */}
         {showAgentSettings && <AgentSettingsPanel />}
       </div>
     );
