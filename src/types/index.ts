@@ -1,8 +1,10 @@
+import type { ReactNode } from 'react';
+
 /** 已注册 APP 的描述 */
 export interface AppMeta {
   id: string;
   name: string;
-  icon: string;
+  icon: ReactNode;
   route: string;
   enabled: boolean;
 }
