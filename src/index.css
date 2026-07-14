@@ -396,6 +396,23 @@ body {
   overflow-y: auto;
 }
 
+.chat-agent-list__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 8px;
+  color: var(--app-text-secondary);
+  font-size: 15px;
+}
+
+.chat-agent-list__empty-hint {
+  font-size: 13px;
+  color: var(--app-text-secondary);
+  opacity: 0.7;
+}
+
 .chat-agent-item {
   display: flex;
   align-items: center;
