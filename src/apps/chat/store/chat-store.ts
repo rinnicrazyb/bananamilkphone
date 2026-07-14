@@ -29,11 +29,11 @@ export const useChatStore = create<ChatState>((set) => ({
   agents: [
     {
       id: 'default-agent',
-      name: '香蕉牛奶',
-      avatar: '🥛',
+      name: 'AI 助手',
+      avatar: '🤖',
       unreadCount: 0,
       settings: {
-        systemPrompt: '你是香蕉牛奶，一个温柔体贴的AI伴侣。',
+        systemPrompt: '你是AI助手，一个友好的智能聊天伙伴。',
         model: '',
         temperature: undefined,
         topP: undefined,
