@@ -2,7 +2,11 @@ import { useState, useRef } from 'react';
 import { useChatStore } from '../store/chat-store';
 import { useSendMessage } from '../../../hooks/use-send-message';
 
-export default function ChatInput() {
+interface ChatInputProps {
+  onPlusClick?: () => void;
+}
+
+export default function ChatInput({ onPlusClick }: ChatInputProps) {
   const [text, setText] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const activeConversationId = useChatStore((s) => s.activeConversationId);
@@ -49,7 +53,7 @@ export default function ChatInput() {
 
   return (
     <div className="chat-input">
-      <div className="chat-input__plus">
+      <div className="chat-input__plus" onClick={onPlusClick}>
         <span>+</span>
       </div>
       <textarea

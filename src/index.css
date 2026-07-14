@@ -1156,3 +1156,90 @@ body {
   gap: 8px;
   justify-content: center;
 }
+
+/* ============================================
+   功能盒（+ 号上拉面板）
+   ============================================ */
+.funcbox-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.3);
+  z-index: 30;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.funcbox {
+  width: 100%;
+  max-width: 400px;
+  background: var(--app-bg);
+  border-radius: 20px 20px 0 0;
+  animation: slideUp 0.25s ease-out;
+  padding: 16px;
+}
+
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+.funcbox__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.funcbox__title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--app-text);
+}
+
+.funcbox__close {
+  background: none;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  color: var(--app-text-secondary);
+  padding: 4px;
+}
+
+.funcbox__grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+.funcbox__item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: var(--app-radius);
+  transition: background 0.15s;
+}
+
+.funcbox__item:hover {
+  background: var(--app-secondary);
+}
+
+.funcbox__item-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: var(--app-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+}
+
+.funcbox__item-label {
+  font-size: 12px;
+  color: var(--app-text);
+  text-align: center;
+}

@@ -1,10 +1,11 @@
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useState } from 'react';
 import { useChatStore } from '../store/chat-store';
 import AgentList from '../components/AgentList';
 import ChatView from '../components/ChatView';
 import ChatInput from '../components/ChatInput';
 import ConversationList from '../components/ConversationList';
 import AgentSettingsPanel from '../components/AgentSettings';
+import FunctionBox from '../components/FunctionBox';
 
 export default function ChatPage() {
   const activeConversationId = useChatStore((s) => s.activeConversationId);
@@ -14,6 +15,7 @@ export default function ChatPage() {
   const toggleConversationList = useChatStore((s) => s.toggleConversationList);
   const showAgentSettings = useChatStore((s) => s.showAgentSettings);
   const setShowAgentSettings = useChatStore((s) => s.setShowAgentSettings);
+  const [showFunctionBox, setShowFunctionBox] = useState(false);
 
   const touchStartX = useRef(0);
 
@@ -26,7 +28,6 @@ export default function ChatPage() {
   const handleTouchEnd = useCallback(
     (e: React.TouchEvent) => {
       const dx = e.changedTouches[0].clientX - touchStartX.current;
-      // 右滑超过 60px 打开对话列表
       if (dx > 60 && !showConversationList) {
         toggleConversationList();
       }
@@ -68,21 +69,22 @@ export default function ChatPage() {
             </div>
           </div>
           <ChatView />
-          <ChatInput />
+          <ChatInput onPlusClick={() => setShowFunctionBox(true)} />
         </div>
 
         {showConversationList && (
           <div className="chat-page__overlay" onClick={toggleConversationList}>
-            <div
-              className="chat-page__panel"
-              onClick={(e) => e.stopPropagation()}
-            >
+            <div className="chat-page__panel" onClick={(e) => e.stopPropagation()}>
               <ConversationList />
             </div>
           </div>
         )}
 
         {showAgentSettings && <AgentSettingsPanel />}
+
+        {showFunctionBox && (
+          <FunctionBox onClose={() => setShowFunctionBox(false)} />
+        )}
       </div>
     );
   }
