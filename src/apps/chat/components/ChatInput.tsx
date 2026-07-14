@@ -1,15 +1,18 @@
 import { useState, useRef } from 'react';
 import { useChatStore } from '../store/chat-store';
+import { useSendMessage } from '../../../hooks/use-send-message';
 
 export default function ChatInput() {
   const [text, setText] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const activeConversationId = useChatStore((s) => s.activeConversationId);
   const addMessage = useChatStore((s) => s.addMessage);
+  const { sendMessage, abort } = useSendMessage();
+  const [sending, setSending] = useState(false);
 
-  const handleSend = () => {
+  const handleSend = async () => {
     const content = text.trim();
-    if (!content || !activeConversationId) return;
+    if (!content || !activeConversationId || sending) return;
 
     const msg = {
       id: `msg-${Date.now()}`,
@@ -24,6 +27,10 @@ export default function ChatInput() {
     if (inputRef.current) {
       inputRef.current.style.height = 'auto';
     }
+
+    setSending(true);
+    await sendMessage(activeConversationId, content);
+    setSending(false);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -55,13 +62,19 @@ export default function ChatInput() {
         onInput={handleInput}
         rows={1}
       />
-      <button
-        className="chat-input__send"
-        onClick={handleSend}
-        disabled={!text.trim()}
-      >
-        发送
-      </button>
+      {sending ? (
+        <button className="chat-input__send chat-input__send--stop" onClick={abort}>
+          ■ 停止
+        </button>
+      ) : (
+        <button
+          className="chat-input__send"
+          onClick={handleSend}
+          disabled={!text.trim()}
+        >
+          发送
+        </button>
+      )}
     </div>
   );
 }
