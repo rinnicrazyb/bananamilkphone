@@ -2,6 +2,7 @@ import { useCallback, useRef } from 'react';
 import { useChatStore } from '../apps/chat/store/chat-store';
 import { useSettingsStore } from '../store/settings-store';
 import { streamChat, LLMError } from '../services/llm/index';
+import { eventBus } from '../services/event-bus/index';
 import type { LLMConfig, LLMMessage } from '../services/llm/types';
 import type { Message } from '../apps/chat/types';
 
@@ -71,6 +72,9 @@ export function useSendMessage() {
         status: 'sending',
       });
 
+      // 发出消息已发送事件
+      eventBus.emit('chat:message-sent', { conversationId, content: userContent });
+
       const abortController = new AbortController();
       abortRef.current = abortController;
 
@@ -103,6 +107,13 @@ export function useSendMessage() {
           },
           abortController.signal
         );
+
+        // 发出消息已接收事件
+        eventBus.emit('chat:message-received', {
+          conversationId,
+          replyId,
+          content: contentAcc,
+        });
       } catch (err) {
         const errorMsg = err instanceof LLMError ? err.message : '未知错误';
         const store = useChatStore.getState();
