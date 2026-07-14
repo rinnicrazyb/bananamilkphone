@@ -7,6 +7,8 @@ import ConversationList from '../components/ConversationList';
 import AgentSettingsPanel from '../components/AgentSettings';
 import FunctionBox from '../components/FunctionBox';
 import InlineSearch from '../components/InlineSearch';
+import BeautifyPanel from '../components/BeautifyPanel';
+import ChatSettingsPanel from '../components/ChatSettingsPanel';
 
 export default function ChatPage() {
   const activeConversationId = useChatStore((s) => s.activeConversationId);
@@ -18,6 +20,8 @@ export default function ChatPage() {
   const setShowAgentSettings = useChatStore((s) => s.setShowAgentSettings);
   const [showFunctionBox, setShowFunctionBox] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+  const [showBeautify, setShowBeautify] = useState(false);
+  const [showChatSettings, setShowChatSettings] = useState(false);
 
   const touchStartX = useRef(0);
 
@@ -101,8 +105,16 @@ export default function ChatPage() {
         {showAgentSettings && <AgentSettingsPanel />}
 
         {showFunctionBox && (
-          <FunctionBox onClose={() => setShowFunctionBox(false)} />
+          <FunctionBox
+            onClose={() => setShowFunctionBox(false)}
+            onOpenSettings={() => setShowChatSettings(true)}
+            onOpenBeautify={() => setShowBeautify(true)}
+          />
         )}
+
+        {showBeautify && <BeautifyPanel onClose={() => setShowBeautify(false)} />}
+
+        {showChatSettings && <ChatSettingsPanel onClose={() => setShowChatSettings(false)} />}
       </div>
     );
   }

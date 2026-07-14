@@ -1322,3 +1322,46 @@ body {
   color: var(--app-text-secondary);
   padding: 4px;
 }
+
+/* ============================================
+   美化面板 / 聊天设置面板
+   ============================================ */
+.beautify-panel {
+  width: 100%;
+  max-width: 400px;
+  background: var(--app-bg);
+  border-radius: 20px 20px 0 0;
+  animation: slideUp 0.25s ease-out;
+  padding: 16px;
+}
+
+.beautify-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.beautify-panel__header h2 {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--app-text);
+}
+
+.beautify-panel__body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.settings-field--row {
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-between;
+}
+
+.settings-field--row input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--app-primary);
+}

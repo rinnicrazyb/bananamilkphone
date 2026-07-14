@@ -1,5 +1,6 @@
 import { useChatStore } from '../store/chat-store';
 import type { Agent } from '../types';
+import AgentAvatar from '../components/AgentAvatar';
 
 export default function AgentList() {
   const agents = useChatStore((s) => s.agents);
@@ -81,14 +82,16 @@ export default function AgentList() {
                 className="chat-agent-item"
                 onClick={() => openOrCreateConversation(agent.id)}
               >
-                <div className="chat-agent-item__avatar">
-                  <span>{agent.avatar}</span>
+                <AgentAvatar
+                  avatar={agent.avatar}
+                  className="chat-agent-item__avatar"
+                >
                   {agent.unreadCount > 0 && (
                     <span className="chat-agent-item__badge">
                       {agent.unreadCount > 99 ? '99+' : agent.unreadCount}
                     </span>
                   )}
-                </div>
+                </AgentAvatar>
                 <div className="chat-agent-item__info">
                   <span className="chat-agent-item__name">{agent.name}</span>
                   <span className="chat-agent-item__time">
