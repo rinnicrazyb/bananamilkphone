@@ -31,14 +31,16 @@ function MessageBubble({ msg }: { msg: Message }) {
 
 export default function ChatView() {
   const activeConversationId = useChatStore((s) => s.activeConversationId);
-  const messages = useChatStore((s) =>
-    activeConversationId ? s.messages[activeConversationId] || [] : []
+  // 重要：selector 必须返回稳定的引用，否则 useSyncExternalStore 会无限循环
+  const rawMessages = useChatStore((s) =>
+    activeConversationId ? s.messages[activeConversationId] : undefined
   );
+  const messages = rawMessages ?? ([] as Message[]);
+
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const sorted = [...messages].sort((a, b) => a.timestamp - b.timestamp);
 
-  // 新消息自动滚到底
   const lastMsgId = messages.length > 0 ? messages[messages.length - 1].id : null;
   useEffect(() => {
     if (scrollRef.current) {
