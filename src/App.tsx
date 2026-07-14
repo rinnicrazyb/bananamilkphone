@@ -1,11 +1,11 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useEffect } from 'react';
 import { themeEngine } from './services/theme-engine/index';
+import LauncherPage from './apps/launcher/pages/LauncherPage';
+import ThemePage from './apps/theme/pages/ThemePage';
 import { useAppStore } from './store/app-store';
 
-// Lazy load apps (Phase 1+)
-const Launcher = () => <div>Launcher APP — Phase 1</div>;
-const Theme = () => <div>Theme APP — Phase 1</div>;
+// Placeholder stub pages
 const Chat = () => <div>Chat APP — Phase 2</div>;
 const Settings = () => <div>Settings APP — Phase 3</div>;
 const Lorebook = () => <div>Lorebook APP — Phase 3</div>;
@@ -19,8 +19,8 @@ const Music = () => <div>Music — 待开发</div>;
 function AppRoutes() {
   return (
     <Routes>
-      <Route path="/" element={<Launcher />} />
-      <Route path="/theme" element={<Theme />} />
+      <Route path="/" element={<LauncherPage />} />
+      <Route path="/theme" element={<ThemePage />} />
       <Route path="/chat" element={<Chat />} />
       <Route path="/settings" element={<Settings />} />
       <Route path="/lorebook" element={<Lorebook />} />
@@ -37,6 +37,24 @@ function AppRoutes() {
 
 export default function App() {
   const theme = useAppStore((s) => s.theme);
+  const registerApp = useAppStore((s) => s.registerApp);
+
+  // 注册默认 APP
+  useEffect(() => {
+    const apps = [
+      { id: 'chat', name: '聊天', icon: '💬', route: '/chat', enabled: true },
+      { id: 'theme', name: '主题', icon: '🎨', route: '/theme', enabled: true },
+      { id: 'settings', name: '设置', icon: '⚙️', route: '/settings', enabled: true },
+      { id: 'memory-gallery', name: '记忆游廊', icon: '🖼️', route: '/memory-gallery', enabled: true },
+      { id: 'arcade', name: '街机厅', icon: '🎮', route: '/arcade', enabled: true },
+      { id: 'lorebook', name: '世界书', icon: '📖', route: '/lorebook', enabled: true },
+      { id: 'archive', name: '档案馆', icon: '🏛️', route: '/archive', enabled: true },
+      { id: 'tavern', name: '酒馆', icon: '🍺', route: '/tavern', enabled: true },
+      { id: 'library', name: '图书馆', icon: '📚', route: '/library', enabled: true },
+      { id: 'music', name: '音乐', icon: '🎵', route: '/music', enabled: true },
+    ];
+    apps.forEach(registerApp);
+  }, [registerApp]);
 
   // 同步主题引擎到 store
   useEffect(() => {
