@@ -3,9 +3,12 @@
 /** 智能体设置（可选，覆盖全局 LLM 配置） */
 export interface AgentSettings {
   model?: string;
+  ocrModel?: string;
+  tts?: string;
   temperature?: number;
   topP?: number;
   systemPrompt: string;
+  worldBookIds?: string[];
 }
 
 /** 智能体 */
