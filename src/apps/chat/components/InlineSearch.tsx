@@ -8,7 +8,9 @@ interface InlineSearchProps {
 
 export default function InlineSearch({ conversationId, onClose }: InlineSearchProps) {
   const [query, setQuery] = useState('');
-  const messages = useChatStore((s) => s.messages[conversationId] || []);
+  // 稳定 selector：直接返回数组或 undefined，不创建新引用
+  const rawMessages = useChatStore((s) => s.messages[conversationId]);
+  const messages = rawMessages ?? [];
   const [currentMatch, setCurrentMatch] = useState(0);
   const [matches, setMatches] = useState<number[]>([]);
 
@@ -34,7 +36,6 @@ export default function InlineSearch({ conversationId, onClose }: InlineSearchPr
     if (matches.length === 0) return;
     const next = (currentMatch + dir + matches.length) % matches.length;
     setCurrentMatch(next);
-    // 滚动到匹配的消息 — 用 data-msg-id 定位
     const msgId = messages[matches[next]]?.id;
     if (msgId) {
       const el = document.getElementById(`msg-${msgId}`);
