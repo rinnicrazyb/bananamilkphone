@@ -12,6 +12,7 @@ interface ChatState {
 
   // Actions
   setAgents: (agents: Agent[]) => void;
+  addAgent: (agent: Agent) => void;
   addConversation: (conv: Conversation) => void;
   setActiveConversation: (id: string | null) => void;
   addMessage: (conversationId: string, msg: Message) => void;
@@ -35,6 +36,11 @@ export const useChatStore = create<ChatState>((set) => ({
   showAgentSettings: false,
 
   setAgents: (agents) => set({ agents }),
+
+  addAgent: (agent) =>
+    set((state) => ({
+      agents: [...state.agents, agent],
+    })),
 
   addConversation: (conv) =>
     set((state) => ({

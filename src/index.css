@@ -411,6 +411,26 @@ body {
   font-size: 13px;
   color: var(--app-text-secondary);
   opacity: 0.7;
+  margin-bottom: 8px;
+}
+
+.chat-agent-list__add-btn {
+  background: none;
+  border: none;
+  font-size: 22px;
+  color: var(--app-primary);
+  cursor: pointer;
+  padding: 4px 8px;
+}
+
+.chat-agent-list__add-btn-large {
+  padding: 10px 24px;
+  border: 1px dashed var(--app-primary);
+  border-radius: var(--app-radius);
+  background: transparent;
+  color: var(--app-primary);
+  font-size: 15px;
+  cursor: pointer;
 }
 
 .chat-agent-item {

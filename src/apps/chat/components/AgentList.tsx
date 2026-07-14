@@ -1,7 +1,9 @@
 import { useChatStore } from '../store/chat-store';
+import type { Agent } from '../types';
 
 export default function AgentList() {
   const agents = useChatStore((s) => s.agents);
+  const addAgent = useChatStore((s) => s.addAgent);
   const setActiveConversation = useChatStore((s) => s.setActiveConversation);
   const addConversation = useChatStore((s) => s.addConversation);
 
@@ -17,6 +19,22 @@ export default function AgentList() {
     setActiveConversation(conv.id);
   };
 
+  const handleAddAgent = () => {
+    const newAgent: Agent = {
+      id: `agent-${Date.now()}`,
+      name: '新智能体',
+      avatar: '🤖',
+      unreadCount: 0,
+      settings: {
+        systemPrompt: '你是AI助手，一个友好的智能聊天伙伴。',
+        model: '',
+        temperature: undefined,
+        topP: undefined,
+      },
+    };
+    addAgent(newAgent);
+  };
+
   return (
     <div className="chat-agent-list">
       <div className="chat-agent-list__header">
@@ -24,6 +42,11 @@ export default function AgentList() {
           ← 返回
         </button>
         <h1>聊天</h1>
+        {agents.length > 0 && (
+          <button className="chat-agent-list__add-btn" onClick={handleAddAgent}>
+            ＋
+          </button>
+        )}
       </div>
 
       <div className="chat-agent-list__body">
@@ -31,8 +54,11 @@ export default function AgentList() {
           <div className="chat-agent-list__empty">
             <p>暂无智能体</p>
             <p className="chat-agent-list__empty-hint">
-              请在智能体设定中添加
+              点击下方按钮添加第一个智能体
             </p>
+            <button className="chat-agent-list__add-btn-large" onClick={handleAddAgent}>
+              ＋ 添加智能体
+            </button>
           </div>
         ) : (
           agents.map((agent) => (
