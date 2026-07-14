@@ -1,0 +1,102 @@
+/* ============================================
+   香蕉牛奶机 (Banana Milk Phone) — Global Styles
+   ============================================ */
+
+/* ---- CSS 变量体系（主题引擎控制） ---- */
+:root {
+  /* 香蕉牛奶默认主题 — 浅色 */
+  --app-primary: #e8a87c;
+  --app-primary-dark: #d4895e;
+  --app-secondary: #f5e6d3;
+  --app-bg: #fffbf5;
+  --app-bg-card: #ffffff;
+  --app-text: #2d2a24;
+  --app-text-secondary: #8a8580;
+  --app-border: #e8e2da;
+  --app-radius: 12px;
+  --app-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --app-font-family: 'system-ui', -apple-system, sans-serif;
+  --app-icon-color: var(--app-primary);
+
+  /* 壁纸 */
+  --app-wallpaper: none;
+  --app-wallpaper-opacity: 1;
+  --app-wallpaper-blur: 0px;
+
+  /* 状态栏 */
+  --app-statusbar-height: 44px;
+
+  /* 桌面 */
+  --app-grid-columns: 4;
+  --app-grid-rows: 6;
+  --app-icon-size: 64px;
+
+  font-family: var(--app-font-family);
+  color: var(--app-text);
+  background: var(--app-bg);
+
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 深色模式 */
+[data-theme='dark'] {
+  --app-primary: #d4895e;
+  --app-primary-dark: #e8a87c;
+  --app-secondary: #3d3530;
+  --app-bg: #1c1917;
+  --app-bg-card: #2a2724;
+  --app-text: #f5f0ea;
+  --app-text-secondary: #9a958f;
+  --app-border: #3d3833;
+  --app-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  --app-icon-color: var(--app-primary);
+}
+
+/* ---- Reset ---- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#root {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- 滚动条 ---- */
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--app-border);
+  border-radius: 2px;
+}
+
+/* ---- 通用工具类 ---- */
+.flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.flex-col {
+  display: flex;
+  flex-direction: column;
+}
