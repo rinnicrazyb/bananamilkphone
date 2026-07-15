@@ -1208,7 +1208,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 
 .funcbox__title {
@@ -1226,10 +1226,26 @@ body {
   padding: 4px;
 }
 
-.funcbox__grid {
+/* 滑动容器 */
+.funcbox__scroll {
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.funcbox__scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.funcbox__page {
+  flex: 0 0 100%;
+  scroll-snap-align: start;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
+  gap: 12px;
+  padding: 4px 0;
 }
 
 .funcbox__item {
@@ -1262,6 +1278,28 @@ body {
   font-size: 12px;
   color: var(--app-text);
   text-align: center;
+}
+
+/* 翻页指示点 */
+.funcbox__dots {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.funcbox__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--app-border);
+  transition: background 0.2s;
+}
+
+.funcbox__dot--active {
+  background: var(--app-primary);
+  width: 18px;
+  border-radius: 3px;
 }
 
 /* ============================================

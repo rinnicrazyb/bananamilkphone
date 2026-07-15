@@ -107,8 +107,6 @@ export default function ChatPage() {
         {showFunctionBox && (
           <FunctionBox
             onClose={() => setShowFunctionBox(false)}
-            onOpenSettings={() => setShowChatSettings(true)}
-            onOpenBeautify={() => setShowBeautify(true)}
           />
         )}
 
