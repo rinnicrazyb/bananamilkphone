@@ -1,4 +1,4 @@
-import { useRef, useEffect, useMemo } from 'react';
+import { useRef, useEffect, useMemo, useCallback } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useChatStore } from '../store/chat-store';
 import type { Message } from '../types';
@@ -35,15 +35,15 @@ function MessageBubble({ msg }: { msg: Message }) {
 
 export default function ChatView() {
   const activeConversationId = useChatStore((s) => s.activeConversationId);
-  // 稳定 selector：返回 undefined 或同一个数组引用
   const rawMessages = useChatStore((s) =>
     activeConversationId ? s.messages[activeConversationId] : undefined
   );
   const messages = rawMessages ?? ([] as Message[]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const loadingRef = useRef(false);
 
-  // 按时间正序排列
   const sorted = useMemo(
     () => [...messages].sort((a, b) => a.timestamp - b.timestamp),
     [messages]
@@ -55,6 +55,33 @@ export default function ChatView() {
     estimateSize: () => 80,
     overscan: 10,
   });
+
+  // Infinite scroll: IntersectionObserver on top sentinel
+  const handleLoadMore = useCallback(() => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
+    // 预留：从 SQLite 分页加载更早消息
+    console.log('[ChatView] Load more messages (stub)');
+    // 模拟加载完成后重置
+    setTimeout(() => { loadingRef.current = false; }, 500);
+  }, []);
+
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel || sorted.length === 0) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          handleLoadMore();
+        }
+      },
+      { root: scrollRef.current, threshold: 0.1 }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [sorted.length, handleLoadMore]);
 
   // 新消息时自动滚到底部
   const lastMsgId = messages.length > 0 ? messages[messages.length - 1].id : null;
@@ -74,6 +101,8 @@ export default function ChatView() {
 
   return (
     <div className="chat-view" ref={scrollRef}>
+      {/* 顶部哨兵：滚动到顶部时触发加载更多 */}
+      <div ref={sentinelRef} style={{ height: 1, width: '100%' }} />
       <div
         style={{
           height: `${virtualizer.getTotalSize()}px`,
