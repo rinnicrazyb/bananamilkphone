@@ -846,18 +846,18 @@ body {
 
 .chat-page__panel {
   position: absolute;
-  right: 0;
+  left: 0;
   top: 0;
   bottom: 0;
   width: 320px;
   max-width: 85%;
   background: var(--app-bg);
   z-index: 11;
-  animation: slideIn 0.2s ease-out;
+  animation: slideInLeft 0.2s ease-out;
 }
 
-@keyframes slideIn {
-  from { transform: translateX(100%); }
+@keyframes slideInLeft {
+  from { transform: translateX(-100%); }
   to { transform: translateX(0); }
 }
 
