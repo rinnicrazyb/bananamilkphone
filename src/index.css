@@ -1507,3 +1507,55 @@ body {
   color: var(--app-text);
   font-family: var(--app-font-family);
 }
+
+/* ============================================
+   头像裁剪
+   ============================================ */
+.avatar-crop-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.avatar-crop {
+  background: var(--app-bg);
+  border-radius: 16px;
+  padding: 20px;
+  max-width: 360px;
+  width: 90%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.avatar-crop h3 {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--app-text);
+}
+
+.avatar-crop__canvas-wrap {
+  border-radius: 12px;
+  overflow: hidden;
+  cursor: move;
+}
+
+.avatar-crop__canvas-wrap canvas {
+  display: block;
+  max-width: 100%;
+}
+
+.avatar-crop__hint {
+  font-size: 13px;
+  color: var(--app-text-secondary);
+}
+
+.avatar-crop__actions {
+  display: flex;
+  gap: 12px;
+}

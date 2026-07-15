@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
 import { useChatStore } from '../store/chat-store';
+import AvatarCrop from './AvatarCrop';
 
 const PRESET_MODELS = [
   { value: '', label: '使用全局设置' },
@@ -22,6 +23,7 @@ export default function AgentSettingsPanel() {
   const deleteConversation = useChatStore((s) => s.deleteConversation);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [customModel, setCustomModel] = useState(false);
+  const [cropSrc, setCropSrc] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const activeConv = conversations.find((c) => c.id === activeConversationId);
@@ -53,9 +55,14 @@ export default function AgentSettingsPanel() {
     const reader = new FileReader();
     reader.onload = (ev) => {
       const dataUrl = ev.target?.result as string;
-      updateAgent(agent.id, { avatar: dataUrl });
+      setCropSrc(dataUrl); // 打开裁剪界面
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleCropConfirm = (cropped: string) => {
+    updateAgent(agent.id, { avatar: cropped });
+    setCropSrc(null);
   };
 
   const isCustom = !PRESET_MODELS.some((m) => m.value === agent.settings.model);
@@ -257,6 +264,14 @@ export default function AgentSettingsPanel() {
           </button>
         </div>
       </div>
+
+      {cropSrc && (
+        <AvatarCrop
+          src={cropSrc}
+          onCrop={handleCropConfirm}
+          onCancel={() => setCropSrc(null)}
+        />
+      )}
     </div>
   );
 }
