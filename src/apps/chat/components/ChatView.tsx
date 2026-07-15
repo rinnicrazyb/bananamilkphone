@@ -3,14 +3,14 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { useChatStore } from '../store/chat-store';
 import type { Message } from '../types';
 
-function MessageBubble({ msg }: { msg: Message }) {
+function MessageBubble({ msg, thinkingCollapsed }: { msg: Message; thinkingCollapsed: boolean }) {
   return (
     <div
       id={`msg-${msg.id}`}
       className={`chat-bubble chat-bubble--${msg.role}`}
     >
       {msg.reasoning && (
-        <details className="chat-bubble__reasoning">
+        <details className="chat-bubble__reasoning" open={!thinkingCollapsed}>
           <summary>思考链</summary>
           <pre>{msg.reasoning}</pre>
         </details>
@@ -39,6 +39,7 @@ export default function ChatView() {
     activeConversationId ? s.messages[activeConversationId] : undefined
   );
   const messages = rawMessages ?? ([] as Message[]);
+  const thinkingCollapsed = useChatStore((s) => s.thinkingChainCollapsed);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -122,7 +123,7 @@ export default function ChatView() {
                 transform: `translateY(${virtualItem.start}px)`,
               }}
             >
-              <MessageBubble msg={msg} />
+              <MessageBubble msg={msg} thinkingCollapsed={thinkingCollapsed} />
             </div>
           );
         })}

@@ -9,6 +9,7 @@ interface ChatState {
   showConversationList: boolean;
   searchQuery: string;
   showAgentSettings: boolean;
+  thinkingChainCollapsed: boolean; // 默认自动折叠思考链
 
   // Actions
   setAgents: (agents: Agent[]) => void;
@@ -24,6 +25,7 @@ interface ChatState {
   updateAgentSettings: (agentId: string, settings: Partial<AgentSettings>) => void;
   updateAgent: (agentId: string, data: Partial<Pick<Agent, 'name' | 'avatar'>>) => void;
   setShowAgentSettings: (show: boolean) => void;
+  setThinkingChainCollapsed: (collapsed: boolean) => void;
 }
 
 export const useChatStore = create<ChatState>((set) => ({
@@ -34,6 +36,7 @@ export const useChatStore = create<ChatState>((set) => ({
   showConversationList: false,
   searchQuery: '',
   showAgentSettings: false,
+  thinkingChainCollapsed: true,
 
   setAgents: (agents) => set({ agents }),
 
@@ -120,4 +123,6 @@ export const useChatStore = create<ChatState>((set) => ({
     })),
 
   setShowAgentSettings: (show) => set({ showAgentSettings: show }),
+
+  setThinkingChainCollapsed: (collapsed) => set({ thinkingChainCollapsed: collapsed }),
 }));
