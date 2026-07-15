@@ -1,4 +1,5 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useMemo } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { useChatStore } from '../store/chat-store';
 import type { Message } from '../types';
 
@@ -34,7 +35,7 @@ function MessageBubble({ msg }: { msg: Message }) {
 
 export default function ChatView() {
   const activeConversationId = useChatStore((s) => s.activeConversationId);
-  // 重要：selector 必须返回稳定的引用，否则 useSyncExternalStore 会无限循环
+  // 稳定 selector：返回 undefined 或同一个数组引用
   const rawMessages = useChatStore((s) =>
     activeConversationId ? s.messages[activeConversationId] : undefined
   );
@@ -42,25 +43,61 @@ export default function ChatView() {
 
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const sorted = [...messages].sort((a, b) => a.timestamp - b.timestamp);
+  // 按时间正序排列
+  const sorted = useMemo(
+    () => [...messages].sort((a, b) => a.timestamp - b.timestamp),
+    [messages]
+  );
 
+  const virtualizer = useVirtualizer({
+    count: sorted.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => 80,
+    overscan: 10,
+  });
+
+  // 新消息时自动滚到底部
   const lastMsgId = messages.length > 0 ? messages[messages.length - 1].id : null;
   useEffect(() => {
-    if (scrollRef.current) {
+    if (scrollRef.current && sorted.length > 0) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [lastMsgId]);
+  }, [lastMsgId, sorted.length]);
+
+  if (sorted.length === 0) {
+    return (
+      <div className="chat-view" ref={scrollRef}>
+        <div className="chat-view__empty">开始对话吧</div>
+      </div>
+    );
+  }
 
   return (
     <div className="chat-view" ref={scrollRef}>
-      {sorted.length === 0 && (
-        <div className="chat-view__empty">
-          开始对话吧
-        </div>
-      )}
-      {sorted.map((msg) => (
-        <MessageBubble key={msg.id} msg={msg} />
-      ))}
+      <div
+        style={{
+          height: `${virtualizer.getTotalSize()}px`,
+          position: 'relative',
+        }}
+      >
+        {virtualizer.getVirtualItems().map((virtualItem) => {
+          const msg = sorted[virtualItem.index];
+          return (
+            <div
+              key={msg.id}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                transform: `translateY(${virtualItem.start}px)`,
+              }}
+            >
+              <MessageBubble msg={msg} />
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
