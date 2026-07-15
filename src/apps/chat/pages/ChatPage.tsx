@@ -7,8 +7,11 @@ import ConversationList from '../components/ConversationList';
 import AgentSettingsPanel from '../components/AgentSettings';
 import FunctionBox from '../components/FunctionBox';
 import InlineSearch from '../components/InlineSearch';
-import BeautifyPanel from '../components/BeautifyPanel';
-import ChatSettingsPanel from '../components/ChatSettingsPanel';
+import ChatSettingsPage from './ChatSettingsPage';
+import BeautifyPage from './BeautifyPage';
+import ContextPreviewPage from './ContextPreviewPage';
+
+type FuncPage = 'settings' | 'beautify' | 'context' | null;
 
 export default function ChatPage() {
   const activeConversationId = useChatStore((s) => s.activeConversationId);
@@ -20,8 +23,7 @@ export default function ChatPage() {
   const setShowAgentSettings = useChatStore((s) => s.setShowAgentSettings);
   const [showFunctionBox, setShowFunctionBox] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
-  const [showBeautify, setShowBeautify] = useState(false);
-  const [showChatSettings, setShowChatSettings] = useState(false);
+  const [funcPage, setFuncPage] = useState<FuncPage>(null);
 
   const touchStartX = useRef(0);
 
@@ -40,6 +42,15 @@ export default function ChatPage() {
     },
     [showConversationList, toggleConversationList]
   );
+
+  const renderFuncPage = () => {
+    switch (funcPage) {
+      case 'settings': return <ChatSettingsPage onBack={() => setFuncPage(null)} />;
+      case 'beautify': return <BeautifyPage onBack={() => setFuncPage(null)} />;
+      case 'context': return <ContextPreviewPage onBack={() => setFuncPage(null)} />;
+      default: return null;
+    }
+  };
 
   if (activeConv) {
     return (
@@ -105,14 +116,10 @@ export default function ChatPage() {
         {showAgentSettings && <AgentSettingsPanel />}
 
         {showFunctionBox && (
-          <FunctionBox
-            onClose={() => setShowFunctionBox(false)}
-          />
+          <FunctionBox onClose={() => setShowFunctionBox(false)} />
         )}
 
-        {showBeautify && <BeautifyPanel onClose={() => setShowBeautify(false)} />}
-
-        {showChatSettings && <ChatSettingsPanel onClose={() => setShowChatSettings(false)} />}
+        {renderFuncPage()}
       </div>
     );
   }

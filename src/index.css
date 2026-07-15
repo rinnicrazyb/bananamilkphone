@@ -1403,3 +1403,107 @@ body {
   height: 18px;
   accent-color: var(--app-primary);
 }
+
+/* ============================================
+   功能盒全屏页面
+   ============================================ */
+.func-fullpage {
+  position: absolute;
+  inset: 0;
+  background: var(--app-bg);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  animation: fadeIn 0.15s ease-out;
+}
+
+.func-fullpage__header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--app-border);
+}
+
+.func-fullpage__header h1 {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--app-text);
+}
+
+.func-fullpage__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* 上下文拼装 */
+.context-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  background: var(--app-secondary);
+  border-radius: var(--app-radius);
+  font-size: 14px;
+  color: var(--app-text);
+}
+
+.context-summary__detail {
+  font-size: 12px;
+  color: var(--app-text-secondary);
+}
+
+.context-block {
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  overflow: hidden;
+}
+
+.context-block__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--app-secondary);
+  font-size: 12px;
+}
+
+.context-block__tag {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.context-block__tag--static {
+  background: #e8a87c;
+  color: #fff;
+}
+
+.context-block__tag--dynamic {
+  background: var(--app-primary);
+  color: #fff;
+}
+
+.context-block__tag--history {
+  background: var(--app-border);
+  color: var(--app-text-secondary);
+}
+
+.context-block__tokens {
+  color: var(--app-text-secondary);
+}
+
+.context-block__content {
+  padding: 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--app-text);
+  font-family: var(--app-font-family);
+}
