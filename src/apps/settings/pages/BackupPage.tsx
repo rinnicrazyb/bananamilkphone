@@ -9,12 +9,9 @@ interface Props {
 export default function BackupPage({ onBack }: Props) {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [includeKeys, setIncludeKeys] = useState(false);
 
   const handleBackup = async () => {
-    const includeKeys = window.confirm(
-      '是否包含 API Key 等敏感信息？\n\n选择「确定」= 包含 Key（方便完整迁移，注意妥善保管备份文件）\n选择「取消」= 不包含 Key（仅备份配置和聊天数据）'
-    );
-
     setBusy(true);
     setResult(null);
     try {
@@ -48,10 +45,18 @@ export default function BackupPage({ onBack }: Props) {
             将所有数据打包为 Zip 文件下载到本地。包括：
           </p>
           <ul className="settings-bullet-list">
-            <li>所有 APP 的配置数据（localStorage）</li>
+            <li>所有 APP 的配置数据（SQLite）</li>
             <li>媒体文件缓存数据（IndexedDB）</li>
-            <li>备份时可选择是否包含 API Key 等敏感信息</li>
           </ul>
+
+          <label className="settings-checkbox" style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '16px 0', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={includeKeys}
+              onChange={(e) => setIncludeKeys(e.target.checked)}
+            />
+            <span>包含 API Key 等敏感信息（注意妥善保管备份文件）</span>
+          </label>
 
           <div className="settings-backup-cta">
             <DownloadSimple size={48} className="settings-backup-cta__icon" />

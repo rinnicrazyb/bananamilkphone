@@ -569,3 +569,65 @@ sdk.dir=D\\:/sdk
 | 文件 | 说明 |
 |------|------|
 | `项目书与更新日志/LEARN_RikkaHub_MCP_Assembly.md` | 🆕 RikkaHub MCP 实现学习笔记（~16KB，覆盖连接生命周期/3种传输协议/OAuth/状态机/对我们项目的改造方案） |
+
+---
+
+## 2026-07-17（续）：数据层重构 — localStorage → SQLite 迁移完成
+
+### 改动概要
+
+| 文件 | 操作 | 说明 |
+|------|------|------|
+| `src/services/sqlite/index.ts` | 🆕 重写 | 完整 SQLite 服务层（@capacitor-community/sqlite v8 + sql.js） |
+| `src/services/persistence/index.ts` | ✏️ 重写 | 从同步 localStorage 改为异步 SQLite 读写 |
+| `src/services/persistence/use-persistence.ts` | ✏️ 更新 | 异步加载数据 |
+| `src/store/settings-store.ts` | ✏️ 更新 | zustand persist → SQLite adapter |
+| `src/services/backup/index.ts` | ✏️ 更新 | 备份从 SQLite 读取，恢复写入 SQLite |
+
+### 存储方案变更
+
+| 维度 | 改前 | 改后 |
+|------|------|------|
+| **文本数据** | localStorage（单 key JSON.stringify） | SQLite `app_data` 表（key-value，增量写入） |
+| **媒体文件** | localStorage（dataURL 嵌入 JSON） | SQLite `media` 表（独立表，待后续迁移） |
+| **开发环境** | localStorage（浏览器） | SQLite via sql.js WASM（浏览器） |
+| **Android APK** | localStorage（不可靠） | 原生 SQLite（可靠） |
+| **容量上限** | ~5-10MB | 无上限（设备存储） |
+
+### 架构
+
+```
+Zustand stores (内存)
+  ↕ 订阅/加载
+持久化服务层 (persistence/index.ts)
+  ↕ async SQLite calls
+SQLite 服务层 (sqlite/index.ts)
+  ↕
+├── 浏览器: sql.js (WASM) → IndexedDB 持久化
+└── Android: @capacitor-community/sqlite → 原生 SQLite
+```
+
+### 关键设计决策
+
+1. **统一接口**：`getItem/setItem/removeItem` 与 localStorage 同接口，降低迁移成本
+2. **双表结构**：`app_data`（文本）+ `media`（媒体），为后续媒体分离做准备
+3. **平台自适应**：自动检测 web/Android 平台，选择对应引擎
+4. **旧数据清除**：初始化时自动清空旧 localStorage（用户确认数据可丢）
+5. **备份适配**：备份服务改为从 SQLite 读取、写入 SQLite
+
+### 涉及文件（7 个，+325/-82 行）
+
+```
+src/services/sqlite/index.ts          # 🆕 重写（完整 SQLite 服务）
+src/services/persistence/index.ts     # ✏️ 重写（异步 SQLite 读写）
+src/services/persistence/use-persistence.ts  # ✏️ 更新（异步加载）
+src/store/settings-store.ts           # ✏️ 更新（zustand persist → SQLite）
+src/services/backup/index.ts          # ✏️ 更新（备份读写 SQLite）
+```
+
+### 构建验证
+
+```bash
+npm run build  # ✅ 通过（TypeScript 零错误，4634 模块转换，683KB JS bundle）
+git push       # ✅ 已推送到 GitHub（commit 560b354）
+```

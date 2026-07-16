@@ -20,6 +20,7 @@
     "@capacitor/core": "^8.4.1",
     "@phosphor-icons/react": "^2.1.10",
     "@tanstack/react-virtual": "^3.14.6",
+    "jeep-sqlite": "^2.8.0",
     "jszip": "^3.10.1",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
