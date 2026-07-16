@@ -102,14 +102,6 @@ export default defineConfig({
           }
 
           const transport = targetUrl.protocol === 'https:' ? https : http;
-          // 收集请求头，排除 host/connection 等
-          const reqHeaders: Record<string, string> = {};
-          const excludeHeaders = ['host', 'connection', 'content-length'];
-          for (const [k, v] of Object.entries(req.headers)) {
-            if (k && v && !excludeHeaders.includes(k.toLowerCase())) {
-              reqHeaders[k] = Array.isArray(v) ? v[0] : v;
-            }
-          }
 
           const port = parseInt(targetUrl.port) || (targetUrl.protocol === 'https:' ? 443 : 80);
           const bodyChunks: Buffer[] = [];
@@ -117,6 +109,27 @@ export default defineConfig({
           req.on('data', (chunk: Buffer) => bodyChunks.push(chunk));
           req.on('end', () => {
             const body = Buffer.concat(bodyChunks);
+
+            // 从 JSON body 中解析出 headers 和 body 数据
+            let parsedBody: { headers?: Record<string, string>; body?: string } = {};
+            try { parsedBody = JSON.parse(body.toString()); } catch { /* 无 body 或非 JSON */ }
+
+            // 构建请求头：优先从 body 中取，其次从 POST 请求头中取
+            const reqHeaders: Record<string, string> = { ...(parsedBody.headers || {}) };
+            const excludeHeaders = ['host', 'connection', 'content-length', 'content-type'];
+            for (const [k, v] of Object.entries(req.headers)) {
+              if (k && v && !excludeHeaders.includes(k.toLowerCase()) && !reqHeaders[k]) {
+                reqHeaders[k] = Array.isArray(v) ? v[0] : v;
+              }
+            }
+
+            // 如果 body 是 base64 编码的二进制数据，解码
+            let requestBody: Buffer | undefined;
+            const isBase64Body = parsedBody.body && (reqHeaders['X-Body-Base64'] === '1' || parsedBody.headers?.['X-Body-Base64'] === '1');
+            if (isBase64Body && parsedBody.body) {
+              requestBody = Buffer.from(parsedBody.body, 'base64');
+            }
+
             const proxyReq = transport.request(
               { hostname: targetUrl.hostname, port, path: targetUrl.pathname + targetUrl.search, method, headers: reqHeaders, timeout: 30000 },
               (proxyRes) => {
@@ -145,7 +158,7 @@ export default defineConfig({
               res.end(JSON.stringify({ error: `请求失败: ${err.message}` }));
             });
 
-            if (body.length > 0) proxyReq.write(body);
+            if (requestBody && requestBody.length > 0) proxyReq.write(requestBody);
             proxyReq.end();
           });
         });
