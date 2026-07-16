@@ -1,0 +1,571 @@
+# 香蕉牛奶机 — 开发日志
+
+> 用于跨会话对接：每次结束前记录当前进度和下一步入口。
+>
+> **⚠️ 日志状态警告（2026-07-17）：** 本文件所有 2026-07-16 及之前的进度总览表均不反映世界书 APP 的真实状态。世界书 APP 已于此前窗口开发完成（数据层+注入逻辑+UI+绑定+持久化+测试全部就绪），详细审计记录见底部「2026-07-17：文档审计」章节。下个窗口请直接参考该审计章节，而非中间的总览表。
+
+---
+
+## 2026-07-15：开发思路重新确定 + 聊天 APP 规格敲定
+
+### 关键决策
+
+| 决策 | 结论 |
+|------|------|
+| 小手机定位 | **拟物化**——尽量像真手机（桌面/状态栏/锁屏/APP网格） |
+| 数据存储 | **两套方案**——浏览器开发用 localStorage，Android 打包用 SQLite |
+| 开发策略 | **垂直切片**——一次只做一个 APP，耦合处先占位，做完整再换下一个 |
+| 媒体 | 图片、音频等媒体文件走 **IndexedDB**（不适合放 SQLite） |
+
+### 聊天 APP 完整规格（grill-me 访谈确认）
+
+#### 打开流程
+桌面 → 智能体列表（通讯录风格）→ 点智能体 → 直接进入最近对话
+
+#### 界面布局
+- **智能体列表页**：左上 ← 返回，列表显示头像/名称/未读红点
+- **聊天界面**：透明设计（能看到聊天背景）
+  - 左上 ← 返回，中间智能体名字，右上 🔍 搜索 + ⋯ 设定
+  - 对话区域（虚拟滚动 + 无限滚动）
+  - 底部：左○+号，中间输入框，右发送按钮
+  - +号上拉功能盒，**左右滑动翻页**（像微信）
+  - **左侧边栏**（右滑打开）：历史对话列表，顶部搜索，新建对话按钮，按时间排序，右侧重命名图标
+
+#### 功能盒 — 全部打开独立页面（不是弹窗）
+
+| 功能 | 说明 |
+|------|------|
+| 语音通话 | ❌ 先不做 |
+| 设置 | 聊天设置页面（自动折叠思考链开关（用户自选）、tool call 工具列表） |
+| 美化 | 美化设置页面（**所有选项在一个页面**）：①上传聊天背景+裁剪+透明度+模糊度 ②头像显隐 ③气泡开关 ④气泡按段分割 ⑤气泡跟随头像 ⑥消息时间 ⑦token数 ⑧自定义气泡样式（上传图片+裁剪）⑨自定义头像框（上传图片+裁剪） |
+| MCP 配置 | MCP 管理页面（仅启用/禁用开关，配置在设置APP） |
+| 网络搜索 | 网络搜索设置页面（仅启用/禁用开关） |
+| 记忆 | 独立记忆管理页面（总结/新增/修改/删除，非 tool call 型，注入系统提示词） |
+| 主动消息 | 主动消息设置页面（事件监听推送，APP内弹窗+手机通知栏，推送到最近对话窗口） |
+| 思考强度 | 思考强度设置页面（滑动条控制 reasoning_effort 参数） |
+| 上下文拼装 | 只读预览页面，显示发送给 LLM 的全部内容，标注各区块来源，预估 tokens |
+
+#### 智能体设定
+头像（**裁剪界面**：选择图片→拖拽选区域→确认）、名称、LLM 模型、OCR 模型（非多模态模型看图用）、TTS、temperature、topP、系统提示词、世界书挂载、删除（弹窗警告）
+
+#### 对话内搜索
+输入关键词 → 显示匹配消息列表（匹配文字高亮）→ 点击条目跳转到对应消息位置
+
+#### 消息
+- 消息状态：微信风格（✓ 已发送 / ✓✓ 已读 / ⚠️ 失败）
+- 思考链：显示在每轮回复最开头，默认折叠/展开由用户设置（聊天设置里加开关）
+- 虚拟滚动 + 无限滚动加载（Intersection Observer 双实现）
+- 所有发给 LLM 的提示词文本都显示 + 可编辑
+
+#### 主动消息机制
+- 事件监听 → 推送到该智能体**最近对话窗口**
+- 用户在APP内 → APP内弹窗
+- 用户不在APP内 → 手机通知栏推送
+- 注意：最近对话窗口是动态的（用户可随时开新对话）
+
+---
+
+### 已完成的 APP
+
+| APP | 状态 | 说明 |
+|-----|------|------|
+| 桌面主屏幕 | ⚠️ 需要重做 | 4×6网格、状态栏、拖拽排序——拟物化方向需加强 |
+| 主题 APP | ⚠️ 需完善 | 颜色模式、壁纸上传裁剪、字体上传 |
+| 聊天 APP | ✅ 功能完整 | Transformer管道 + 功能盒8项（记忆已完整实现，主动消息待开发） |
+| 设置 APP | ✅ 基础可用 | API 配置（Key 加密存储）、模型/参数设置 |
+| 世界书 APP | ⬜ | 未开始 |
+| 记忆游廊 APP | ⬜ | 未开始 |
+| 街机厅 APP | ⬜ | 未开始 |
+| 档案馆 APP | ⬜ | 未开始 |
+| 音乐 APP | ⬜ | 未开始 |
+| 酒馆 APP | ⬜ | 未开始 |
+| 图书馆 APP | ⬜ | 未开始 |
+
+### 技术选型确认
+
+| 层级 | 选型 | 说明 |
+|------|------|------|
+| 前端框架 | React + TypeScript | ✅ 已确定 |
+| 构建工具 | Vite | ✅ 已确定 |
+| 跨平台壳 | Capacitor | ✅ 已确定（Android 打包） |
+| 本地存储(主) | SQLite（生产）/ localStorage（开发） | ✅ 已确定 |
+| 本地存储(辅) | IndexedDB（媒体文件/缓存） | ✅ 已确定 |
+| 状态管理 | Zustand | ✅ 已确定 |
+| 图标 | Phosphor Icons（线条图标） | ✅ 已确定 |
+| AI 调用 | LLM API + Tool Call | ✅ 已确定 |
+| 主题控制 | CSS 变量 | ✅ 已确定 |
+| 事件通信 | 内存事件总线 | ✅ 已确定 |
+| 加密 | Web Crypto API | ✅ 已确定 |
+| APP 间通信 | 事件总线（不直接引用） | ✅ 已确定 |
+
+---
+
+## 2026-07-15 重做进度更新
+
+### 已完成
+| 内容 | 状态 |
+|------|------|
+| Phase 1: 骨架重做（AgentList通讯录风格、左侧边栏、右滑手势） | ✅ |
+| Phase 2a: 虚拟滚动（@tanstack/react-virtual） | ✅ |
+| Phase 2b: 无限滚动（IntersectionObserver 哨兵） | ✅ |
+| Phase 2c: 消息状态 ✓/✓✓/⚠️ | ✅ |
+| Phase 2d: 思考链折叠设置 | ✅ |
+| Phase 3a: 功能盒滑动翻页 + 独立页面路由 | ✅ |
+
+### 待完成
+| 内容 | 优先级 |
+|------|--------|
+| Phase 3b: 功能盒各独立页面（设置/美化/上下文/思考强度等） | 🔴 |
+| Phase 4: 智能体设定（头像裁剪界面） | 🔴 |
+| Phase 5: 搜索高亮+跳转完善 | 🟡 |
+| Phase 6: 主动消息机制 | 🟡 |
+
+---
+
+## 2026-07-15：聊天 APP 功能完善（大版本）
+
+### 修复的 Bug（7 个）
+| Bug | 描述 | 修复 |
+|-----|------|------|
+| 1 | 头像裁剪无法拖动 | 改用文档级事件 + 触屏支持 |
+| 2 | 对话气泡重叠 | 虚拟滚动添加 measureElement 动态测量 |
+| 3 | 智能体头像未显示 | MessageBubble 渲染头像 |
+| 4 | 功能盒跳转主屏幕 | 改用 onSelect 回调替代 navigate |
+| 5 | 消息缺少读状态 | 流式完成后更新为 read；assistant 添加 ✓ |
+| 6 | 通讯录缺联络时间 | 新增 updateAgentLastContact，显示相对时间 |
+| 7 | 图标非线条风格 | 替换为 Phosphor 图标（MagnifyingGlass/PencilSimple/Trash） |
+
+### 新增功能
+| 功能 | 说明 |
+|------|------|
+| **AgentDisplayConfig** | 每个智能体独立的显示/美化配置（背景、显示选项、气泡、头像框、功能开关） |
+| **聊天背景上传** | BeautifyPage 独立上传+裁剪，透明度/模糊度实时预览 |
+| **显示选项持久化** | 6个开关（显示头像/气泡/按段分割/跟随头像/时间/Token）立即生效并持久化 |
+| **用户头像** | ChatSettingsPage 上传+裁剪，显示在用户消息右侧 |
+| **自定义气泡样式** | 用户和助手分别上传气泡背景图片，启用 useBubbles 后渲染 |
+| **自定义头像框** | 智能体和用户分别上传头像框装饰图片，叠加渲染 |
+| **上下文拼装重写** | 按来源分区（静态/动态），折叠设计，按角色分组，最新输入高亮 |
+| **思考强度** | 移入 AgentSettings（TopP 下方），标注待模型支持 |
+| **记忆功能** | 数据模型 + Store CRUD + 全屏页面（列表/新增/修改/删除/总结） |
+| **记忆注入** | LLM 上下文：系统提示词后、历史消息前注入记忆文本 |
+| **功能盒全映射** | 所有 8 个功能项均跳转至对应页面或 Stub 提示 |
+
+### 涉及文件（共 18 个文件）
+`types.ts` `chat-store.ts` `ChatView.tsx` `ChatInput.tsx` `ChatPage.tsx` `ChatSettingsPage.tsx` `BeautifyPage.tsx` `ContextPreviewPage.tsx` `MemoryPage.tsx` `StubPage.tsx` `AgentList.tsx` `AgentAvatar.tsx` `AgentSettings.tsx` `AvatarCrop.tsx` `ConversationList.tsx` `FunctionBox.tsx` `use-send-message.ts` `index.css`
+
+### 下一步
+- 设置 APP：MCP 配置页、网络搜索配置页（目前 Stub）← 🔜 当前任务
+- 主动消息：事件监听机制
+- 记忆总结：对接 LLM API 生成摘要（当前为直接拼接选中文本）
+
+---
+
+## 2026-07-15：Bug 修复 + UI 调整
+
+### 修复
+- 聊天背景改用 `background-attachment: fixed`，消息滚动时背景不动（微信/QQ风格）
+- 上下文拼装页修复不能滑动（.chat-page 添加 position: relative）
+- 记忆页面添加诊断信息，修复 store 选择器闭包问题
+
+### UI 调整
+- 聊天页顶部改为显示智能体名称而非对话标题
+- 通讯录列表标题「聊天」→「通讯录」，加号按钮移至右侧
+- 上下文拼装默认折叠
+- 自定义气泡框改名+添加 9 宫格使用说明
+- 默认头像改为空白灰色圆形
+
+### 显示选项修复
+- 使用气泡样式：assistant 取消勾选后无气泡背景
+- 按段分割：`\n{2,}` 切分，思考链独立在上方
+- 气泡跟随头像：分段模式下每段显示头像
+- Token 数：每回合最后一条消息显示
+- 上传气泡图片 CSS `!important` 覆盖 inline style 问题修复
+
+---
+
+## 2026-07-16：Transformer 管道重构（详见之前记录）
+
+---
+
+## 2026-07-16：长期记忆功能 — 完整版
+
+### 背景
+基于 LumiMuse 开源项目（`C:\refs\LumiMuse-master`）的记忆系统架构学习，实现手动提取 + 自动触发的完整记忆管理功能。
+
+### 新增文件（4 个）
+| 文件 | 说明 |
+|------|------|
+| `src/services/memory-extraction/types.ts` | 提取相关类型定义 |
+| `src/services/memory-extraction/prompt.ts` | 默认提取提示词（伴侣场景改编版） |
+| `src/services/memory-extraction/index.ts` | 核心引擎：格式化→LLM→解析→合并→保存 |
+| `src/services/llm/index.ts` | 新增 `chatCompletion` 非流式接口 |
+
+### 修改文件（4 个）
+| 文件 | 说明 |
+|------|------|
+| `src/apps/chat/types.ts` | Memory 扩展（sourceMsgIds/manualEdited）、Message 增加 memoryExtracted、AgentDisplayConfig 增加6个提取配置字段 |
+| `src/apps/chat/store/chat-store.ts` | 新增 addMemories、markMessagesExtracted 两个 action |
+| `src/apps/chat/pages/MemoryPage.tsx` | **完整重写**：提取弹窗/自动触发设置/提示词编辑/编号记忆列表 |
+| `src/hooks/use-send-message.ts` | AI 回复完成后关键词触发自动提取 |
+| `src/App.tsx` | 打开软件时检查定时+打开触发 |
+
+### 功能清单
+| 功能 | 说明 |
+|------|------|
+| **手动提取** | 点击「从对话中提取」→弹窗选择消息（全选/勾选）→LLM 总结→保存到记忆列表 |
+| **已提取标记** | 已提取的消息变为 memoryExtracted，不再可选 |
+| **关键词触发** | 用户自定义关键词，AI 回复后自动提取全部未提取条目 |
+| **定时触发** | 用户自定义时间（默认04:00），到达时自动触发（App未运行时下次打开补跑） |
+| **打开触发** | 每次打开香蕉牛奶机时触发（默认启用） |
+| **提取提示词** | 提供默认伴侣场景提示词，用户可编辑/恢复默认 |
+| **记忆列表** | 编号 #1-#N、可折叠展开、编辑/删除、显示来源消息数 |
+| **记忆合并** | 相似度>0.7的自动合并（最长内容+合并来源ID） |
+
+### 技术选型
+- 提取用 `chatCompletion` 非流式接口（低温度0.3保证一致性）
+- JSON 解析带容错（直接解析 → 正则提取代码块 → 容错）
+- 合并用 bigram Jaccard 相似度（与 LumiMuse 同算法）
+- 自动触发用 `setTimeout` 延迟 + 动态 `import()` 避免循环依赖
+
+### 测试结果
+- `npm run build` 通过（TypeScript 编译 + Vite 生产构建 ✅，JS bundle 632KB）
+- 耦合扫描：`extractMemories` 被 3 处调用（MemoryPage / use-send-message / App.tsx），所有传参匹配
+
+### 下一步入口
+- 主动消息：事件监听 → APP内弹窗/手机通知栏推送
+- 世界书 APP：接入 PromptInjectionTransformer 的 5 位置注入逻辑
+- 记忆游廊 APP 开发
+
+---
+
+## 2026-07-16：Bug 修复 + 上下文拼装联动
+
+### 修复
+1. **CSS：settings-textarea 宽度异常** — 缺少 `width: 100%` 和 `box-sizing: border-box`，导致系统提示词 textarea 只占左侧半个方块。已修复。
+2. **ContextPreview 缺少记忆注入区块** — 上下文拼装页面只展示了 system message（含合并的记忆），但用户看不到独立的记忆注入内容。新增"记忆注入"区块（位于系统提示词与工具定义之间），实时显示 store 中的记忆列表。
+3. **提取 prompt 缺少已有记忆参考** — LumiMuse 在提取 prompt 中插入了 `{existing_memories}` 防止重复提取，我们版本没做。已补充：提取时把已有记忆列表发给 LLM 作为参考。
+
+### 涉及文件
+`src/index.css` `src/apps/chat/pages/ContextPreviewPage.tsx` `src/services/memory-extraction/prompt.ts` `src/services/memory-extraction/index.ts`
+
+---
+
+## 本窗口结束 — 交接文档
+
+### 当前进度（2026-07-16 会话结束）
+
+**Phase 2 — 聊天 APP 状态：**
+
+| 功能盒项目 | 状态 |
+|-----------|------|
+| 设置（ChatSettingsPage） | ✅ 完成 |
+| 美化（BeautifyPage） | ✅ 完成 |
+| 上下文拼装（ContextPreviewPage） | ✅ 完成（含记忆注入区块） |
+| MCP 配置（MCPPage） | ✅ UI 完成（连接有 Bug，用户决定暂停） |
+| 网络搜索（WebSearchPage） | ✅ UI 完成 |
+| 记忆（MemoryPage） | ✅ **本次完整实现**（手动提取+自动触发+LLM总结+提示词自定义） |
+| 主动消息（StubPage） | ⬜ 未开始 |
+| 思考强度（AgentSettings） | ✅ UI 完成（标注等待模型供应商支持） |
+
+**其他 APP：**
+
+| APP | 状态 |
+|-----|------|
+| 桌面主屏幕 | ⚠️ 需要重做（拟物化方向需加强） |
+| 主题 APP | ⚠️ 需完善（颜色模式/壁纸/字体） |
+| 设置 APP | ✅ 基础可用 |
+| 世界书 APP | ⬜ 未开始 |
+| 记忆游廊 APP | ⬜ 未开始（因非常重要后续再做） |
+| 其余 APP | ⬜ 占位目录 |
+
+### 关键技术决策（本窗口确立）
+
+| 决策 | 结论 |
+|------|------|
+| 消息拼装架构 | **Pipeline + Transformer 模式**（纯函数数组，非 OOP 类体系） |
+| 世界书注入 | **5 位置占位已做好**，等世界书 APP 开发时填充触发逻辑 |
+| 记忆提取 | **用户选消息 → LLM 总结 → 保存**，不包含系统提示词 |
+| 记忆触发 | 关键词触发 + 定时触发 + 打开软件触发（定时不依赖后台保活，下次打开补跑） |
+| 提取 prompt | **用户可自定义**，默认提供伴侣场景版提示词 |
+
+### 重要技术细节（下一窗口 agent 必读）
+
+1. **Transformer 管道位于** `src/services/transformer-pipeline/`，调用方式：`runPipeline(baseMessages, ctx)`
+2. **记忆提取引擎位于** `src/services/memory-extraction/`，核心函数：`extractMemories(options)`
+3. **提取 prompt 占位符**：`{existing_memories}`（已有记忆列表）和 `{conversation_text}`（勾选消息），两个都会被引擎自动替换
+4. **MCP 连接有 Bug**：用户说试了一下午无法成功连接服务，已决定暂时放下。MCPPage/MCPServerForm 等 UI 代码已完成。
+5. **定时触发**：App.tsx 中 `useEffect` 实现，延迟 2 秒后检查。不可靠的后台保活方案已弃用，改为"打开时补跑"。
+6. **关键词触发**：在 `use-send-message.ts` 中 AI 回复完成后检查。
+
+### 学习文档索引
+
+| 文档 | 位置 |
+|------|------|
+| RikkaHub LLM 拼装机制 | `项目书与更新日志/LEARN_RikkaHub_LLM_Assembly.md` |
+| Transformer 管道任务规格 | `项目书与更新日志/TASK_SPEC_Transformer_Pipeline.md` |
+| LumiMuse 记忆系统 | `项目书与更新日志/LEARN_LumiMuse_Memory.md` |
+| 长期记忆任务规格 | `项目书与更新日志/TASK_SPEC_LongTerm_Memory.md` |
+| RikkaHub 世界书系统 | `项目书与更新日志/LEARN_RikkaHub_Lorebook_System.md` |
+| 世界书 APP 开发规格 | `项目书与更新日志/TASK_SPEC_Lorebook_APP.md` |
+
+### 下一步入口（按优先级排序）
+
+1. **世界书 APP 开发** — Phase A 类型与数据层（grill-me 访谈已完成，规格已确定，详见 TASK_SPEC_Lorebook_APP.md）
+2. **主动消息功能** — 事件监听 → APP 内弹窗 + 手机通知栏推送（目前 StubPage 占位）
+3. **主题 APP 完善** — 颜色模式切换、壁纸上传裁剪、字体上传
+4. **桌面主屏幕重做** — 拟物化方向加强：真实手机状态栏、APP 拖拽排序
+5. **记忆游廊 APP** — 用户说"非常重要后续再做"
+6. **MCP 连接问题诊断** — 用户暂停中
+
+
+---
+
+## 2026-07-16（下半段续）：上下文拼装重构为独立区块 + APK 打包成功
+
+### 完成内容
+
+1. **上下文拼装页重构** — 从"组件分解嵌套+对话历史单区块"改为**9 个独立 `<details>` 区块**，严格按后端管道执行顺序排列
+
+2. **APK 打包环境修复 + 成功打包**：
+   - 诊断发现 `android/local.properties` 缺失（指向 `D:\sdk`）
+   - 创建后 Gradle 构建成功，产出 `android/app/build/outputs/apk/debug/app-debug.apk`
+
+### 重构后的区块顺序
+
+| 序号 | 区块 | 条件 |
+|------|------|------|
+| 1 | 世界书注入·系统提示词前 | 仅有关键词触发 |
+| 2 | 系统提示词 | 始终显示 |
+| 3 | 世界书注入·系统提示词后 | 仅有关键词触发 |
+| 4 | 记忆注入 | 有记忆时 |
+| 5 | 工具定义 | 有工具时 |
+| 6 | 世界书注入·对话开头 | TOP_OF_CHAT |
+| 7 | 对话历史（前半段） | 第一个 BOTTOM/AT_DEPTH 之前 |
+| 8 | 世界书注入·最新消息前/指定深度 | BOTTOM/AT_DEPTH |
+| 9 | 对话历史（剩余部分） | 之后 |
+
+无 BOTTOM/AT_DEPTH 时整个对话历史为一块不分段。
+
+### 打包环境补丁
+
+创建 `android/local.properties`：
+```
+sdk.dir=D\\:/sdk
+```
+
+### 当前进度
+
+| APP | 状态 |
+|-----|------|
+| 聊天 APP | ✅ 功能完整（上下文拼装重构完成） |
+| 设置 APP | ✅ 基础可用 |
+| 世界书 APP | ⬜ 未开始（规格已确定） |
+| 桌面主屏幕 | ⚠️ 需重做 |
+| 主题 APP | ⚠️ 需完善 |
+| 记忆游廊 APP | ⬜ 未开始 |
+| 其余 APP | ⬜ 占位目录 |
+
+### 功能盒状态
+
+| 项目 | 状态 |
+|------|------|
+| 设置 | ✅ |
+| 美化 | ✅ |
+| 上下文拼装 | ✅ **重构完成（9 区块独立）** |
+| MCP 配置 | ✅ UI 完成（连接有 Bug） |
+| 网络搜索 | ✅ UI 完成 |
+| 记忆 | ✅ 完整实现 |
+| 主动消息 | ⬜ |
+| 思考强度 | ✅ UI 完成 |
+
+### 涉及文件
+
+| 文件 | 操作 |
+|------|------|
+| `src/apps/chat/pages/ContextPreviewPage.tsx` | ✏️ 重写（9 独立区块 + 历史分段） |
+| `android/local.properties` | 🆕 新增（`sdk.dir=D\\:/sdk`） |
+
+### 下一步入口（按优先级）
+
+1. **世界书 APP 开发** — Phase A 类型与数据层
+2. **主动消息功能**
+3. **主题 APP 完善**
+4. **桌面主屏幕重做**
+5. **记忆游廊 APP**
+
+
+### 完成内容
+1. **学习 RikkaHub Lorebook 系统** — 详细阅读 PromptInjectionTransformer、数据模型、UI 设计、测试用例，产出学习文档 `LEARN_RikkaHub_Lorebook_System.md`
+2. **grill-me 访谈** — 围绕项目书世界书设计，7 轮问答确认了所有设计细节（条目结构、5 种注入位置、角色注入、绑定机制、UI 翻页交互等）
+3. **回写项目书** — 更新 2-6 节为完整规格（5 位置、角色选项、激活机制等）
+4. **产出规格文档** — `TASK_SPEC_Lorebook_APP.md`（含数据模型、注入机制、UI 设计、耦合清单、4 阶段开发任务）
+
+### 关键技术决策（grill-me 确认）
+
+| 决策 | 结论 |
+|------|------|
+| 条目结构 | 一本世界书含多条条目，每条独立配置关键词+注入内容+位置+优先级 |
+| 注入位置 | 5 种，保留 RikkaHub 全部（前 2 合并到 system prompt，后 3 插入独立消息） |
+| 角色注入 | 保留 USER/ASSISTANT 角色选项（仅插入独立消息时生效） |
+| 关键词匹配 | 支持普通关键词 + 正则表达式 + 大小写敏感 |
+| 扫描深度 | 用户可配置（默认 5 条） |
+| 绑定方式 | 智能体设定处勾选；世界书 APP 内只读显示绑定信息 |
+| 绑定层级 | 仅智能体级别，不支持对话级别 |
+| 书封 | 可选，无则默认 |
+| 翻页 | 手势+箭头双支持 |
+| 目录结构 | 扁平条目列表，侧边栏从左边缘滑出显示条目名+状态 |
+| 排序 | 按编辑时间（书架）；按优先级（条目内），同优先级按列表顺序 |
+| 导入/导出 | 单本 JSON |
+| UI 设计 | 书籍阅读式体验：封面页 → 目录页 → 逐条阅读页 |
+
+### 本窗口新增/修改文件
+
+| 文件 | 操作 |
+|------|------|
+| `项目书与更新日志/LEARN_RikkaHub_Lorebook_System.md` | 🆕 新增 |
+| `项目书与更新日志/TASK_SPEC_Lorebook_APP.md` | 🆕 新增 |
+| `项目书与更新日志/bananamilkphone项目书.md` | ✏️ 更新 2-6 节 |
+| `项目书与更新日志/DEVELOPMENT_LOG.md` | ✏️ 更新日志+文档索引 |
+
+### 当前进度总览（⚠️ 过时，见下方 2026-07-17 审计）
+
+| APP | 状态 |
+|-----|------|
+| 聊天 APP | ✅ 功能完整 |
+| 设置 APP | ✅ 基础可用 |
+| 世界书 APP | ⬜ ~~未开始~~ 见下方审计 |
+| 桌面主屏幕 | ⚠️ 需重做 |
+| 主题 APP | ⚠️ 需完善 |
+| 记忆游廊 APP | ⬜ 未开始 |
+| 其余 APP | ⬜ 占位目录 |
+
+### 下一步入口（⚠️ 过时，见下方 2026-07-17 审计）
+- ~~世界书 APP 开发~~（已完成）
+
+---
+
+## 2026-07-17：文档审计 — 世界书 APP 实际已开发完成（日志严重滞后）
+
+### 背景
+本窗口进入只读模式，发现上一窗口交接缺失——开发日志显示世界书 APP「⬜ 未开始」，但实际代码已**完整开发**。
+
+### 世界书 APP 实际开发清单
+
+| 模块 | 文件 | 状态 |
+|------|------|------|
+| 数据模型 | `src/apps/lorebook/types.ts` | ✅ 完整（Lorebook/LorebookEntry/5位置/常驻/关键词/正则/扫描深度） |
+| Store | `src/apps/lorebook/store/lorebook-store.ts` | ✅ 完整 CRUD + 条目重排序 |
+| 书架列表 UI | `src/apps/lorebook/pages/LorebookListPage.tsx` | ✅ 网格2列+书封+FAB创建 |
+| 翻页详情 UI | `src/apps/lorebook/pages/LorebookDetailPage.tsx` | ✅ 封面→目录→条目逐页+触摸滑动+侧边栏+绑定显示 |
+| 条目编辑弹窗 | `src/apps/lorebook/components/EntryEditorDialog.tsx` | ✅ 全字段覆盖+Chip关键词 |
+| CSS 样式 | `src/index.css`（~800 行） | ✅ 完整（lorebook-page/lorebook-detail/entry-editor） |
+| Transformer 注入 | `src/services/transformer-pipeline/prompt-injection.ts` | ✅ 完整实现（collectInjections/applyInjections/findSafeInsertIndex） |
+| 管道注册 | `src/services/transformer-pipeline/index.ts` | ✅ defaultPipeline 已包含 |
+| 上下文传递 | `src/hooks/use-send-message.ts` + `ContextPreviewPage.tsx` | ✅ 构建 lorebooks 上下文 |
+| 智能体绑定 UI | `src/apps/chat/components/AgentSettings.tsx`（WorldBookSelector） | ✅ 勾选列表 |
+| 路由注册 | `src/App.tsx` | ✅ `/lorebook` + `/lorebook/:id` |
+| 桌面注册 | `src/App.tsx`（registerApp） | ✅ "世界书"图标 |
+| 持久化 | `src/services/persistence/index.ts` + `use-persistence.ts` | ✅ localStorage 加载/保存/版本 v3 |
+| 单元测试 | `src/services/transformer-pipeline/prompt-injection.test.ts` | ✅ ~14KB 全覆盖（常驻/关键词/正则/5位置/多注入/safeIndex） |
+
+### 项目书 vs 代码：3 处未实现功能
+
+项目书 2-6 节列出但代码尚未实现的：
+
+| 功能 | 项目书要求 | 代码现状 |
+|------|-----------|---------|
+| **书封裁剪** | 上传后裁剪（拖拽选区域→确认） | `handleCoverUpload` 直接 FileReader 读 dataURL，无裁剪界面 |
+| **导入/导出** | JSON 格式，单本导入导出 | 无任何 import/export UI 或函数 |
+| **AT_DEPTH 折叠** | 高级位置折叠为高级选项 | EntryEditorDialog 直接显示在 select 下拉，无折叠 |
+
+### 发现的桌面主屏幕问题
+
+| 问题 | 说明 |
+|------|------|
+| **无分页导航** | AppGrid 渲染多页但仅 page 0 可见（其余 `display: none`），无圆点指示器/页码切换/滑动翻页 |
+| **拖拽仅桌面端** | 使用 HTML5 Drag API（`draggable` + `onDragStart/onDrop`），移动端触摸设备不可用 |
+| **无跨页拖拽** | 拖拽排序仅同页内交换，不支持跨页移动 |
+
+### 发现的主题 APP 缺失功能
+
+| 功能 | 项目书要求 | 代码现状 |
+|------|-----------|---------|
+| **自定义 APP 图标** | 列表显示所有 APP，每项"更换"按钮→裁剪→保存，已更换的显示"重置" | ThemePage 中完全缺失 |
+| **自定义 CSS 预设** | 用户输入浅色/深色CSS代码→命名保存→启用按钮 | ThemePage 中完全缺失 |
+
+### 其他发现
+
+- `showTokens` 类型在 `use-send-message.ts` 和 `types.ts` 中显示为 `[redacted]` — 经 grep 确认是工具输出层动态掩码，实际文件内容正常，不是文件 bug
+- 状态栏电池在浏览器固定为 100%，代码中已备注等待 Capacitor Battery Plugin
+
+### 更新后的真实进度总览
+
+| APP | 状态 | 说明 |
+|-----|------|------|
+| 聊天 APP | ✅ 功能完整 | 8 项功能盒 + 记忆提取（手动+自动）+ 9区块上下文拼装 |
+| 设置 APP | ✅ 基础可用 | API 配置（Key 加密）+ 模型/参数设置 |
+| **世界书 APP** | ✅ **开发完成** | 数据层+注入逻辑+UI+绑定+持久化+测试全齐，3 处小功能待补 |
+| 桌面主屏幕 | ⚠️ 需完善 | 分页导航+触摸拖拽+跨页移动 |
+| 主题 APP | ⚠️ 需完善 | 缺\"自定义 APP 图标\"和\"自定义 CSS 预设\"两个功能模块 |
+| 记忆游廊 APP | ⬜ 未开始 | 用户说\"非常重要后续再做\" |
+| 其余 APP | ⬜ 占位目录 | Phase 3 启动 |
+
+### 下次进入下一步入口（按优先级）
+
+1. **桌面主屏幕完善** — 添加分页导航圆点 + 触摸滑动 + 跨页拖拽
+2. **主题 APP 完善** — 添加自定义 APP 图标区段 + 自定义 CSS 预设
+3. **世界书 APP 收尾** — 书封裁剪界面 + JSON 导入/导出 + AT_DEPTH 折叠选项
+4. **主动消息功能** — 事件监听→APP 内弹窗 + 手机通知栏推送
+5. **记忆游廊 APP**
+
+### 重要注意事项
+
+1. **日志同步纪律**：这次教训——开发日志必须每次修改代码后同步更新状态表，不能只写中间过程不改顶部的总览表
+2. **项目书已同步**：世界书 2-6 节规格已在上个窗口通过 grill-me 确认并回写，无需再改
+3. **Transformer 管道已承载世界书**：`promptInjectionTransformer` 已在 `defaultPipeline` 中（第 2 位），`systemPromptTransformer` → `promptInjectionTransformer` → `memoryInjectionTransformer` → `placeholderTransformer` 顺序正确
+
+---
+
+## 2026-07-17（下半段续）：grill-me 访谈 — 数据存储 / 版本管理 / MCP 原理
+
+### 话题 1：数据存储方案（现状分析，待后续处理）
+
+**现状**：项目 100% 依赖 `localStorage` 存一切数据（智能体/对话/消息/记忆/世界书全部 `JSON.stringify` 进一个 key）。SQLite 服务为空壳（`console.log` 级占位），IndexedDB 封装完整但无人调用。
+
+**发现的关键问题**：
+1. **APK 数据可能被清** — Android WebView 的 localStorage 在应用更新/存储清理时可能被系统清除。这是在手机端备份失败的可能原因之一
+2. **消息量增大后必崩** — localStorage 写入是全量序列化，上千条消息后每次保存都序列化整个 `Record<string, Message[]>`，性能和容量都有上限
+3. **APK 没有文件系统权限** — 备份功能在浏览器能下载文件，但在 APK 中因为没有 `@capacitor/filesystem` 等原生插件，无法写入 Android 文件系统。通知权限灰色也是同样原因（缺少原生推送插件）
+
+**用户决策**：希望"两边兼顾"（浏览器开发 + Android 生产），且倾向一次性做到最优而非迭代。SQLite 方案（`@capacitor-community/sqlite`，浏览器用 SQL.js + Android 用原生 SQLite）被确认为目标方向，但实际迁移工作待后续窗口进行。
+
+### 话题 2：版本管理
+
+**现状**：项目已有本地 Git 仓库（main 分支，10 次提交）。无远程仓库，工作目录有大量未提交改动。
+
+**用户决策**：愿意创建 GitHub 远程仓库。操作步骤：
+1. 用户去 github.com → New Repository → **不勾 README/.gitignore/License**（因为本地已有，勾了会导致冲突）
+2. 创建后将 HTTPS URL 告知 agent
+3. agent 在命令行执行 `git remote add origin <URL>` + `git push -u origin main`
+
+### 话题 3：MCP 连接失败根因分析 + RikkaHub 学习
+
+**核心发现**：当前 MCP 代码（`use-send-message.ts` 的 `executeToolCall`）只是简单 `fetch POST` 到服务器 URL，**缺少 MCP 协议必须的 `initialize` 握手**。所有符合规范的 MCP 服务端都会先等待 `initialize`，收不到就直接拒绝或超时。
+
+**确认两个服务都可通过 HTTP 连接**：
+- Ombre-Brain（`P0luz/Ombre-Brain`）：Streamable HTTP / SSE 传输，OAuth 2.1 或 Bearer Token 授权
+- Nocturne Memory（`Dataojitori/nocturne_memory`）：Streamable HTTP（`/mcp` 端点）、SSE（`/sse` 端点），Bearer Token 授权
+
+**RikkaHub MCP 实现完整学习**：详细输出至 `LEARN_RikkaHub_MCP_Assembly.md`
+
+**修复方案（3 个选项）**：
+| 方案 | 工作量 | 效果 |
+|------|--------|------|
+| A：轻量修复 — 加一次性 initialize 握手（约50行） | 小 | 能连 Streamable HTTP 服务 |
+| B：引入 `@modelcontextprotocol/sdk` | 中 | 完整协议支持 |
+| C：RikkaHub 级重构 — 连接池+OAuth+重连 | 大 | 生产级质量 |
+
+**新增文件**：
+| 文件 | 说明 |
+|------|------|
+| `项目书与更新日志/LEARN_RikkaHub_MCP_Assembly.md` | 🆕 RikkaHub MCP 实现学习笔记（~16KB，覆盖连接生命周期/3种传输协议/OAuth/状态机/对我们项目的改造方案） |

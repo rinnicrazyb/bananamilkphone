@@ -1,42 +1,39 @@
 import { useRef, useState, useCallback, type ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
   GearSix, PaintBrush, Plugs,
-  Globe, Brain, Bell, Gauge, FileText,
+  Globe, Brain, Bell, FileText, X,
 } from '@phosphor-icons/react';
 
 interface FunctionItem {
   id: string;
   label: string;
   icon: ReactNode;
-  route?: string;
 }
 
 const PAGES: FunctionItem[][] = [
   // 第一页
   [
-    { id: 'settings', label: '设置', icon: <GearSix size={28} weight="duotone" />, route: '/chat/settings' },
-    { id: 'beautify', label: '美化', icon: <PaintBrush size={28} weight="duotone" />, route: '/chat/beautify' },
-    { id: 'mcp', label: 'MCP 配置', icon: <Plugs size={28} weight="duotone" />, route: '/chat/mcp' },
-    { id: 'websearch', label: '网络搜索', icon: <Globe size={28} weight="duotone" />, route: '/chat/websearch' },
+    { id: 'settings', label: '设置', icon: <GearSix size={28} weight="duotone" /> },
+    { id: 'beautify', label: '美化', icon: <PaintBrush size={28} weight="duotone" /> },
+    { id: 'mcp', label: 'MCP 配置', icon: <Plugs size={28} weight="duotone" /> },
+    { id: 'websearch', label: '网络搜索', icon: <Globe size={28} weight="duotone" /> },
   ],
   // 第二页
   [
-    { id: 'memory', label: '记忆', icon: <Brain size={28} weight="duotone" />, route: '/chat/memory' },
-    { id: 'active', label: '主动消息', icon: <Bell size={28} weight="duotone" />, route: '/chat/active' },
-    { id: 'thinking', label: '思考强度', icon: <Gauge size={28} weight="duotone" />, route: '/chat/thinking' },
-    { id: 'context', label: '上下文拼装', icon: <FileText size={28} weight="duotone" />, route: '/chat/context' },
+    { id: 'memory', label: '记忆', icon: <Brain size={28} weight="duotone" /> },
+    { id: 'active', label: '主动消息', icon: <Bell size={28} weight="duotone" /> },
+    { id: 'context', label: '上下文拼装', icon: <FileText size={28} weight="duotone" /> },
   ],
 ];
 
 interface FunctionBoxProps {
   onClose: () => void;
+  onSelect?: (id: string) => void;
 }
 
-export default function FunctionBox({ onClose }: FunctionBoxProps) {
+export default function FunctionBox({ onClose, onSelect }: FunctionBoxProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [page, setPage] = useState(0);
-  const navigate = useNavigate();
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -47,7 +44,7 @@ export default function FunctionBox({ onClose }: FunctionBoxProps) {
 
   const handleItemClick = (fn: FunctionItem) => {
     onClose();
-    if (fn.route) navigate(fn.route);
+    onSelect?.(fn.id);
   };
 
   return (
@@ -55,7 +52,7 @@ export default function FunctionBox({ onClose }: FunctionBoxProps) {
       <div className="funcbox" onClick={(e) => e.stopPropagation()}>
         <div className="funcbox__header">
           <span className="funcbox__title">功能</span>
-          <button className="funcbox__close" onClick={onClose}>✕</button>
+          <button className="funcbox__close" onClick={onClose}><X size={18} /></button>
         </div>
         <div className="funcbox__scroll" ref={scrollRef} onScroll={handleScroll}>
           {PAGES.map((pageItems, pi) => (

@@ -4,7 +4,8 @@
  * 写入防抖：数据变化后等待 500ms 再写入，避免频繁 I/O。
  */
 
-import type { Conversation, Message, Agent } from '../../apps/chat/types';
+import type { Conversation, Message, Agent, Memory } from '../../apps/chat/types';
+import type { Lorebook } from '../../apps/lorebook/types';
 
 const STORAGE_KEY = 'bananamilkphone-data';
 
@@ -13,6 +14,8 @@ interface PersistedData {
   agents: Agent[];
   conversations: Conversation[];
   messages: Record<string, Message[]>;
+  memories: Record<string, Memory[]>;
+  lorebooks: Lorebook[];
   timestamp: number;
 }
 
@@ -35,16 +38,20 @@ export function loadData(): PersistedData | null {
 export function saveDataDebounced(
   agents: Agent[],
   conversations: Conversation[],
-  messages: Record<string, Message[]>
+  messages: Record<string, Message[]>,
+  memories: Record<string, Memory[]>,
+  lorebooks: Lorebook[] = []
 ): void {
   if (debounceTimer) clearTimeout(debounceTimer);
 
   debounceTimer = setTimeout(() => {
     const data: PersistedData = {
-      version: 1,
+      version: 3,
       agents,
       conversations,
       messages,
+      memories,
+      lorebooks,
       timestamp: Date.now(),
     };
 
@@ -62,7 +69,9 @@ export function saveDataDebounced(
 export function saveDataImmediately(
   agents: Agent[],
   conversations: Conversation[],
-  messages: Record<string, Message[]>
+  messages: Record<string, Message[]>,
+  memories: Record<string, Memory[]>,
+  lorebooks: Lorebook[] = []
 ): void {
   if (debounceTimer) {
     clearTimeout(debounceTimer);
@@ -70,10 +79,12 @@ export function saveDataImmediately(
   }
 
   const data: PersistedData = {
-    version: 1,
+    version: 3,
     agents,
     conversations,
     messages,
+    memories,
+    lorebooks,
     timestamp: Date.now(),
   };
 

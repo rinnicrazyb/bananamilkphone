@@ -1,5 +1,7 @@
 import { useState } from 'react';
 
+import { X } from '@phosphor-icons/react';
+
 interface ChatSettingsPanelProps {
   onClose: () => void;
 }
@@ -12,7 +14,7 @@ export default function ChatSettingsPanel({ onClose }: ChatSettingsPanelProps) {
       <div className="beautify-panel" onClick={(e) => e.stopPropagation()}>
         <div className="beautify-panel__header">
           <h2>聊天设置</h2>
-          <button className="funcbox__close" onClick={onClose}>✕</button>
+          <button className="funcbox__close" onClick={onClose}><X size={18} /></button>
         </div>
         <div className="beautify-panel__body">
           <label className="settings-field settings-field--row">

@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { CaretLeft, Sun, Moon, Monitor, FolderOpen, FileText } from '@phosphor-icons/react';
 import { useAppStore } from '../../../store/app-store';
 import { themeEngine } from '../../../services/theme-engine/index';
 
@@ -58,7 +59,7 @@ export default function ThemePage() {
     <div className="theme-page">
       <div className="theme-page__header">
         <button className="back-btn" onClick={() => window.history.back()}>
-          ← 返回
+          <CaretLeft size={18} /> 返回
         </button>
         <h1>主题</h1>
       </div>
@@ -74,7 +75,7 @@ export default function ThemePage() {
                 className={`theme-mode-btn ${theme.mode === mode ? 'active' : ''}`}
                 onClick={() => handleModeChange(mode)}
               >
-                {mode === 'light' ? '☀️ 浅色' : mode === 'dark' ? '🌙 深色' : '🖥️ 跟随系统'}
+                {mode === 'light' ? <><Sun size={20} /> 浅色</> : mode === 'dark' ? <><Moon size={20} /> 深色</> : <><Monitor size={20} /> 跟随系统</>}
               </button>
             ))}
           </div>
@@ -102,7 +103,7 @@ export default function ThemePage() {
               className="theme-btn"
               onClick={() => fileInputRef.current?.click()}
             >
-              📁 选择图片
+              <FolderOpen size={18} /> 选择图片
             </button>
           </div>
 
@@ -146,7 +147,7 @@ export default function ThemePage() {
             id="font-upload"
           />
           <label htmlFor="font-upload" className="theme-btn">
-            📄 上传字体
+            <FileText size={18} /> 上传字体
           </label>
           {theme.fontFamily && (
             <p className="theme-section__current">当前字体：{theme.fontFamily}</p>

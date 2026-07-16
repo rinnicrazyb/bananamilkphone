@@ -11,6 +11,7 @@ export default function ChatInput({ onPlusClick }: ChatInputProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const activeConversationId = useChatStore((s) => s.activeConversationId);
   const addMessage = useChatStore((s) => s.addMessage);
+  const updateAgentLastContact = useChatStore((s) => s.updateAgentLastContact);
   const { sendMessage, abort } = useSendMessage();
   const [sending, setSending] = useState(false);
 
@@ -31,6 +32,11 @@ export default function ChatInput({ onPlusClick }: ChatInputProps) {
     if (inputRef.current) {
       inputRef.current.style.height = 'auto';
     }
+
+    // 更新智能体最后联络时间
+    const state = useChatStore.getState();
+    const conv = state.conversations.find((c) => c.id === activeConversationId);
+    if (conv) updateAgentLastContact(conv.agentId, Date.now());
 
     setSending(true);
     await sendMessage(activeConversationId, content);

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { MagnifyingGlass, CaretUp, CaretDown, X } from '@phosphor-icons/react';
 import { useChatStore } from '../store/chat-store';
 
 interface InlineSearchProps {
@@ -46,7 +47,7 @@ export default function InlineSearch({ conversationId, onClose }: InlineSearchPr
   return (
     <div className="inline-search">
       <div className="inline-search__input-wrap">
-        <span className="inline-search__icon">🔍</span>
+        <span className="inline-search__icon"><MagnifyingGlass size={16} /></span>
         <input
           type="text"
           className="inline-search__input"
@@ -63,16 +64,16 @@ export default function InlineSearch({ conversationId, onClose }: InlineSearchPr
         {matches.length > 0 && (
           <>
             <button className="inline-search__nav" onClick={() => goToMatch(-1)}>
-              ▲
+              <CaretUp size={14} />
             </button>
             <button className="inline-search__nav" onClick={() => goToMatch(1)}>
-              ▼
+              <CaretDown size={14} />
             </button>
           </>
         )}
       </div>
       <button className="inline-search__close" onClick={onClose}>
-        ✕
+        <X size={16} />
       </button>
     </div>
   );

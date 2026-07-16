@@ -19,9 +19,10 @@ import ChatPage from './apps/chat/pages/ChatPage';
 import SettingsPage from './apps/settings/pages/SettingsPage';
 import { useAppStore } from './store/app-store';
 import { usePersistence } from './services/persistence/use-persistence';
+import LorebookListPage from './apps/lorebook/pages/LorebookListPage';
+import LorebookDetailPage from './apps/lorebook/pages/LorebookDetailPage';
 
 // Placeholder stub pages
-const Lorebook = () => <div>Lorebook APP — Phase 3</div>;
 const MemoryGallery = () => <div>Memory Gallery — 待开发</div>;
 const ArchiveStub = () => <div>Archive — 待开发</div>;
 const ArcadeStub = () => <div>Arcade — 待开发</div>;
@@ -36,7 +37,8 @@ function AppRoutes() {
       <Route path="/theme" element={<ThemePage />} />
       <Route path="/chat" element={<ChatPage />} />
       <Route path="/settings" element={<SettingsPage />} />
-      <Route path="/lorebook" element={<Lorebook />} />
+      <Route path="/lorebook" element={<LorebookListPage />} />
+      <Route path="/lorebook/:id" element={<LorebookDetailPage />} />
       <Route path="/memory-gallery" element={<MemoryGallery />} />
       <Route path="/archive" element={<ArchiveStub />} />
       <Route path="/arcade" element={<ArcadeStub />} />
@@ -76,6 +78,70 @@ export default function App() {
   useEffect(() => {
     themeEngine.apply(theme);
   }, [theme]);
+
+  // 打开软件时检查待处理的记忆提取
+  useEffect(() => {
+    // 延迟执行，不阻塞首次渲染
+    const timer = setTimeout(() => {
+      import('./apps/chat/store/chat-store').then(({ useChatStore }) => {
+        const state = useChatStore.getState();
+        for (const agent of state.agents) {
+          const config = agent.displayConfig;
+          if (!config || !agent.id) continue;
+
+          // 确定是否需要触发
+          let shouldTrigger = false;
+
+          if (config.extractionOpenTriggerEnabled) {
+            shouldTrigger = true;
+          }
+
+          if (config.extractionTimeEnabled && config.extractionTime) {
+            const now = new Date();
+            const [h, m] = config.extractionTime.split(':').map(Number);
+            const todayTarget = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m);
+            if (now.getTime() >= todayTarget.getTime()) {
+              const lastExtract = config.lastExtractionTime;
+              const todayStart = todayTarget.getTime();
+              if (!lastExtract || lastExtract < todayStart) {
+                shouldTrigger = true;
+              }
+            }
+          }
+
+          if (!shouldTrigger) continue;
+
+          // 找该智能体的最新对话
+          const convs = state.conversations
+            .filter((c) => c.agentId === agent.id)
+            .sort((a, b) => b.updatedAt - a.updatedAt);
+          if (convs.length === 0) continue;
+
+          const conv = convs[0];
+          const msgs = state.messages[conv.id] || [];
+          const unextracted = msgs.filter((m) => !m.memoryExtracted);
+          if (unextracted.length === 0) continue;
+
+          import('./services/memory-extraction/index').then(({ extractMemories }) => {
+            extractMemories({
+              messages: unextracted,
+              agentName: agent.name,
+              agentId: agent.id,
+              conversationId: conv.id,
+              customPrompt: config.extractionPrompt,
+            }).then(() => {
+              // 更新上次提取时间
+              useChatStore.getState().updateAgentDisplayConfig(agent.id, {
+                lastExtractionTime: Date.now(),
+              });
+            }).catch(() => {});
+          });
+        }
+      });
+    }, 2000); // 延迟2秒，等页面完全加载
+
+    return () => clearTimeout(timer);
+  }, []);
 
   return (
     <BrowserRouter>

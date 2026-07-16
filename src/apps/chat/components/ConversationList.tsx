@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { PencilSimple, Trash, X } from '@phosphor-icons/react';
 import { useChatStore } from '../store/chat-store';
 
 export default function ConversationList() {
@@ -64,7 +65,7 @@ export default function ConversationList() {
       <div className="conv-panel__header">
         <h2>对话列表</h2>
         <button className="conv-panel__close" onClick={toggleConversationList}>
-          ✕
+          <X size={18} />
         </button>
       </div>
 
@@ -128,7 +129,7 @@ export default function ConversationList() {
                 }}
                 title="重命名"
               >
-                ✏️
+                <PencilSimple size={16} />
               </button>
               <button
                 className="conv-item__btn"
@@ -138,7 +139,7 @@ export default function ConversationList() {
                 }}
                 title="删除"
               >
-                🗑️
+                <Trash size={16} />
               </button>
             </div>
 

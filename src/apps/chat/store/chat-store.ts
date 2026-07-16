@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import type { Agent, AgentSettings, Conversation, Message } from '../types';
+import type { Agent, AgentSettings, AgentDisplayConfig, Conversation, Message, Memory } from '../types';
+import { DEFAULT_DISPLAY_CONFIG } from '../types';
 
 interface ChatState {
   agents: Agent[];
@@ -10,6 +11,7 @@ interface ChatState {
   searchQuery: string;
   showAgentSettings: boolean;
   thinkingChainCollapsed: boolean; // 默认自动折叠思考链
+  memories: Record<string, Memory[]>; // keyed by agentId
 
   // Actions
   setAgents: (agents: Agent[]) => void;
@@ -23,9 +25,19 @@ interface ChatState {
   toggleConversationList: () => void;
   setSearchQuery: (query: string) => void;
   updateAgentSettings: (agentId: string, settings: Partial<AgentSettings>) => void;
-  updateAgent: (agentId: string, data: Partial<Pick<Agent, 'name' | 'avatar'>>) => void;
+  updateAgent: (agentId: string, data: Partial<Pick<Agent, 'name' | 'avatar' | 'lastContactTime'>>) => void;
+  updateAgentLastContact: (agentId: string, timestamp: number) => void;
+  updateAgentDisplayConfig: (agentId: string, config: Partial<AgentDisplayConfig>) => void;
   setShowAgentSettings: (show: boolean) => void;
   setThinkingChainCollapsed: (collapsed: boolean) => void;
+  setMemories: (agentId: string, memories: Memory[]) => void;
+  addMemory: (agentId: string, memory: Memory) => void;
+  updateMemory: (agentId: string, memoryId: string, content: string) => void;
+  deleteMemory: (agentId: string, memoryId: string) => void;
+  /** 批量添加记忆并标记消息已提取 */
+  addMemories: (agentId: string, memories: Memory[], conversationId: string, messageIds: string[]) => void;
+  /** 标记多条消息已被提取 */
+  markMessagesExtracted: (conversationId: string, messageIds: string[]) => void;
 }
 
 export const useChatStore = create<ChatState>((set) => ({
@@ -37,6 +49,7 @@ export const useChatStore = create<ChatState>((set) => ({
   searchQuery: '',
   showAgentSettings: false,
   thinkingChainCollapsed: true,
+  memories: {},
 
   setAgents: (agents) => set({ agents }),
 
@@ -122,7 +135,78 @@ export const useChatStore = create<ChatState>((set) => ({
       ),
     })),
 
+  updateAgentLastContact: (agentId, timestamp) =>
+    set((state) => ({
+      agents: state.agents.map((a) =>
+        a.id === agentId ? { ...a, lastContactTime: timestamp } : a
+      ),
+    })),
+
+  updateAgentDisplayConfig: (agentId, config) =>
+    set((state) => ({
+      agents: state.agents.map((a) =>
+        a.id === agentId
+          ? { ...a, displayConfig: { ...DEFAULT_DISPLAY_CONFIG, ...a.displayConfig, ...config } }
+          : a
+      ),
+    })),
+
   setShowAgentSettings: (show) => set({ showAgentSettings: show }),
 
   setThinkingChainCollapsed: (collapsed) => set({ thinkingChainCollapsed: collapsed }),
+
+  setMemories: (agentId, memories) =>
+    set((state) => ({
+      memories: { ...state.memories, [agentId]: memories },
+    })),
+
+  addMemory: (agentId, memory) =>
+    set((state) => ({
+      memories: {
+        ...state.memories,
+        [agentId]: [...(state.memories[agentId] || []), memory],
+      },
+    })),
+
+  updateMemory: (agentId, memoryId, content) =>
+    set((state) => ({
+      memories: {
+        ...state.memories,
+        [agentId]: (state.memories[agentId] || []).map((m) =>
+          m.id === memoryId ? { ...m, content, updatedAt: Date.now() } : m
+        ),
+      },
+    })),
+
+  deleteMemory: (agentId, memoryId) =>
+    set((state) => ({
+      memories: {
+        ...state.memories,
+        [agentId]: (state.memories[agentId] || []).filter((m) => m.id !== memoryId),
+      },
+    })),
+
+  addMemories: (agentId, memories, conversationId, messageIds) =>
+    set((state) => ({
+      memories: {
+        ...state.memories,
+        [agentId]: [...(state.memories[agentId] || []), ...memories],
+      },
+      messages: {
+        ...state.messages,
+        [conversationId]: (state.messages[conversationId] || []).map((m) =>
+          messageIds.includes(m.id) ? { ...m, memoryExtracted: true } : m
+        ),
+      },
+    })),
+
+  markMessagesExtracted: (conversationId, messageIds) =>
+    set((state) => ({
+      messages: {
+        ...state.messages,
+        [conversationId]: (state.messages[conversationId] || []).map((m) =>
+          messageIds.includes(m.id) ? { ...m, memoryExtracted: true } : m
+        ),
+      },
+    })),
 }));

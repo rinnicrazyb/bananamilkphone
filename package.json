@@ -10,7 +10,8 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "cap:open": "npx cap open android",
-    "cap:sync": "npx cap sync"
+    "cap:sync": "npx cap sync",
+    "test": "vitest run"
   },
   "dependencies": {
     "@capacitor-community/sqlite": "^8.1.0",
@@ -19,6 +20,7 @@
     "@capacitor/core": "^8.4.1",
     "@phosphor-icons/react": "^2.1.10",
     "@tanstack/react-virtual": "^3.14.6",
+    "jszip": "^3.10.1",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-router-dom": "^7.18.1",
@@ -31,6 +33,7 @@
     "@vitejs/plugin-react": "^6.0.3",
     "oxlint": "^1.71.0",
     "typescript": "~6.0.2",
-    "vite": "^8.1.1"
+    "vite": "^8.1.1",
+    "vitest": "^4.1.10"
   }
 }

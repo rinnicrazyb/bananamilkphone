@@ -1,23 +1,90 @@
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+import { useState, useRef } from 'react';
+import { CaretLeft, UploadSimple, Trash, Wrench } from '@phosphor-icons/react';
 import { useChatStore } from '../store/chat-store';
+import { DEFAULT_DISPLAY_CONFIG } from '../types';
+import AvatarCrop from '../components/AvatarCrop';
 
 interface ChatSettingsPageProps {
   onBack: () => void;
 }
 
 export default function ChatSettingsPage({ onBack }: ChatSettingsPageProps) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const thinkingCollapsed = useChatStore((s: any) => s.thinkingChainCollapsed);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const setThinkingChainCollapsed = useChatStore((s: any) => s.setThinkingChainCollapsed);
+  const thinkingCollapsed = useChatStore((s) => s.thinkingChainCollapsed);
+  const setThinkingChainCollapsed = useChatStore((s) => s.setThinkingChainCollapsed);
+  const activeConversationId = useChatStore((s) => s.activeConversationId);
+  const conversations = useChatStore((s) => s.conversations);
+  const agents = useChatStore((s) => s.agents);
+  const updateAgentDisplayConfig = useChatStore((s) => s.updateAgentDisplayConfig);
+
+  const conv = conversations.find((c) => c.id === activeConversationId);
+  const agent = agents.find((a) => a.id === conv?.agentId);
+  const cfg = agent?.displayConfig ?? DEFAULT_DISPLAY_CONFIG;
+
+  // 收集当前对话中的工具调用记录
+  const rawMessages = useChatStore((s) =>
+    activeConversationId ? s.messages[activeConversationId] : undefined
+  ) ?? [];
+  const toolCallEntries = (() => {
+    const entries: Array<{ name: string; args: string; result: string }> = [];
+    for (let i = 0; i < rawMessages.length; i++) {
+      const msg = rawMessages[i];
+      if (msg.role === 'assistant' && msg.toolCalls) {
+        for (const tc of msg.toolCalls) {
+          const resultMsg = rawMessages.find((m) => m.role === 'tool' && m.toolCallId === tc.id);
+          entries.push({
+            name: tc.function.name,
+            args: tc.function.arguments,
+            result: resultMsg?.content || '（等待执行结果）',
+          });
+        }
+      }
+    }
+    return entries;
+  })();
+
+  const [cropSrc, setCropSrc] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  if (!agent) return null;
+
+  const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => setCropSrc(ev.target?.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  const handleCropConfirm = (cropped: string) => {
+    updateAgentDisplayConfig(agent.id, { userAvatar: cropped });
+    setCropSrc(null);
+  };
 
   return (
     <div className="func-fullpage">
       <div className="func-fullpage__header">
-        <button className="back-btn" onClick={onBack}>← 返回</button>
+        <button className="back-btn" onClick={onBack}><CaretLeft size={18} /> 返回</button>
         <h1>聊天设置</h1>
       </div>
       <div className="func-fullpage__body">
+        <label className="settings-field">
+          <span>用户头像</span>
+          <div className="settings-field__row">
+            {cfg.userAvatar && (
+              <img src={cfg.userAvatar} alt="用户头像" className="settings-avatar-preview" />
+            )}
+            <input type="file" accept="image/*" ref={fileInputRef} onChange={handleAvatarUpload} hidden />
+            <button className="settings-btn-icon" onClick={() => fileInputRef.current?.click()}>
+              <UploadSimple size={18} /> 上传
+            </button>
+            {cfg.userAvatar && (
+              <button className="settings-btn-icon" onClick={() => updateAgentDisplayConfig(agent.id, { userAvatar: undefined })}>
+                <Trash size={18} /> 移除
+              </button>
+            )}
+          </div>
+        </label>
+
         <label className="settings-field settings-field--row">
           <span>自动折叠思考链</span>
           <input
@@ -30,10 +97,34 @@ export default function ChatSettingsPage({ onBack }: ChatSettingsPageProps) {
           开启后思考链默认收起，可手动展开
         </p>
         <div className="settings-field">
-          <span>Tool Call 工具列表</span>
-          <p className="settings-field__hint">（后续版本支持）</p>
+          <span>Tool Call 工具调用记录</span>
+          <div className="settings-field__hint" style={{ marginTop: 4 }}>
+            {toolCallEntries.length === 0
+              ? '当前对话暂无工具调用'
+              : toolCallEntries.map((entry, i) => (
+                  <div key={i} style={{ padding: '6px 0', borderBottom: '1px solid var(--app-border)', fontSize: 13 }}>
+                    <div style={{ fontWeight: 600, fontFamily: 'monospace', fontSize: 12 }}>
+                      <Wrench size={14} /> {entry.name}
+                    </div>
+                    <div style={{ color: 'var(--app-text-secondary)', fontSize: 11, marginTop: 2 }}>
+                      参数: {entry.args}
+                    </div>
+                    <div style={{ fontSize: 11, marginTop: 2, maxHeight: 40, overflow: 'hidden', color: '#27ae60' }}>
+                      {entry.result}
+                    </div>
+                  </div>
+                ))}
+          </div>
         </div>
       </div>
+
+      {cropSrc && (
+        <AvatarCrop
+          src={cropSrc}
+          onCrop={handleCropConfirm}
+          onCancel={() => setCropSrc(null)}
+        />
+      )}
     </div>
   );
 }
