@@ -1,7 +1,11 @@
 /**
- * 备份/恢复服务 —— Zip 格式，自动扫描 localStorage + IndexedDB
+ * 备份/恢复服务 —— Zip 格式，扫描 SQLite + IndexedDB
+ *
+ * 文本数据从 SQLite（app_data 表）读取
+ * 媒体缓存数据从 IndexedDB 读取
  */
 import JSZip from 'jszip';
+import * as sqlite from '../sqlite/index';
 
 export interface BackupManifest {
   createdAt: string;
@@ -14,7 +18,7 @@ export interface BackupManifest {
 
 const APP_VERSION = '0.2.0';
 
-/** 需要排除的 localStorage 键（临时/缓存数据） */
+/** 需要排除的 key（临时/缓存数据） */
 const EXCLUDE_KEYS = [/^vite-env/i];
 
 /** 生成备份 Zip */
@@ -22,17 +26,17 @@ export async function createBackup(includeKeys: boolean): Promise<Blob> {
   const zip = new JSZip();
   const stores: string[] = [];
 
-  // 1. 扫描 localStorage
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (!key) continue;
+  // 1. 从 SQLite 读取所有数据
+  await sqlite.initDatabase();
+  const keys = await sqlite.getAllKeys();
+  for (const key of keys) {
     if (EXCLUDE_KEYS.some((re) => re.test(key))) continue;
 
     // 如果不包含 Key，跳过 settings-store（含 API Key）
     if (!includeKeys && key === 'settings-store') continue;
 
     try {
-      const raw = localStorage.getItem(key);
+      const raw = await sqlite.getItem(key);
       if (raw) {
         zip.file(`stores/${key}.json`, raw);
         stores.push(key);
@@ -42,7 +46,7 @@ export async function createBackup(includeKeys: boolean): Promise<Blob> {
     }
   }
 
-  // 2. 扫描 IndexedDB
+  // 2. 扫描 IndexedDB（媒体缓存数据）
   let hasIndexedDB = false;
   try {
     const databases = await indexedDB.databases();
@@ -93,8 +97,9 @@ export async function restoreFromZip(file: File): Promise<{ stores: string[]; in
   const manifest: BackupManifest = JSON.parse(manifestText);
   if (!manifest.version) throw new Error('无效的备份文件：缺少版本信息');
 
-  // 2. 恢复 stores
+  // 2. 恢复 stores → SQLite
   const stores: string[] = [];
+  await sqlite.initDatabase();
   const storesFolder = zip.folder('stores');
   if (storesFolder) {
     const storeFiles = Object.entries(storesFolder.files).filter(
@@ -104,17 +109,15 @@ export async function restoreFromZip(file: File): Promise<{ stores: string[]; in
       if (file.dir) continue;
       const key = name.replace('.json', '');
       const content = await file.async('text');
-      localStorage.setItem(key, content);
+      await sqlite.setItem(key, content);
       stores.push(key);
     }
   }
 
-  // 3. 恢复 IndexedDB
+  // 3. 恢复 IndexedDB（仅记录，各 APP 自行实现）
   const indexedDB: string[] = [];
   const dbsFolder = zip.folder('indexeddb');
   if (dbsFolder) {
-    // 注意：浏览器中无法直接覆盖 IndexedDB 数据库，
-    // 这里将数据解析后通过原有 APP 逻辑写入
     const dbFiles = Object.entries(dbsFolder.files).filter(
       ([name]) => name.endsWith('.json') && !name.startsWith('indexeddb/')
     );
@@ -122,7 +125,6 @@ export async function restoreFromZip(file: File): Promise<{ stores: string[]; in
       const dbName = name.replace('.json', '');
       indexedDB.push(dbName);
     }
-    // IndexedDB 恢复需要各 APP 自行实现，此处仅记录
   }
 
   return { stores, indexedDB };

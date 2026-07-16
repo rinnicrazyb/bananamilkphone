@@ -1,8 +1,9 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import type { LLMConfig } from '../services/llm/types';
 import type { MCPServer, SearchProviders, LLMPreset } from '../apps/settings/types';
 import { DEFAULT_SEARCH_PROVIDERS } from '../apps/settings/types';
+import { sqliteStorageAdapter } from '../services/sqlite/index';
 
 export interface SettingsState {
   llmConfig: LLMConfig;
@@ -96,6 +97,7 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
     }),
     {
       name: 'settings-store',
+      storage: createJSONStorage(() => sqliteStorageAdapter),
       version: 1,
       migrate: (persistedState: any, _version: number) => {
         let state = { ...persistedState };

@@ -5,34 +5,33 @@ import { loadData, saveDataDebounced, saveDataImmediately } from './index';
 
 /**
  * 数据持久化 Hook —— 在应用根组件中使用一次
- * 自动加载已保存的数据，并订阅 store 变化带防抖写入
+ * 从 SQLite 加载数据注入 Zustand stores，并订阅变化写入
  */
 export function usePersistence() {
   useEffect(() => {
-    // 从 localStorage 加载已保存的数据并注入 store
-    const persisted = loadData();
-    if (persisted) {
+    // 从 SQLite 加载已保存的数据并注入 store
+    loadData().then((persisted) => {
+      if (!persisted) return;
+
       const state = useChatStore.getState();
       state.setAgents(persisted.agents || []);
-      // conversations 需要逐个添加（可能含重复）
+
       if (persisted.conversations?.length) {
-        state.conversations.length = 0;
-        // 直接替换 conversations 数组
         useChatStore.setState({ conversations: persisted.conversations });
       }
-      // 合并消息
+
       const mergedMessages = { ...state.messages, ...(persisted.messages || {}) };
-      // 合并记忆（兼容 v1 无 memories 的情况）
       const mergedMemories = { ...state.memories, ...(persisted.memories || {}) };
       useChatStore.setState({ messages: mergedMessages, memories: mergedMemories });
 
-      // 加载世界书数据
       if (persisted.lorebooks?.length) {
         useLorebookStore.getState().setLorebooks(persisted.lorebooks);
       }
-    }
+    }).catch((err) => {
+      console.warn('[usePersistence] Load failed:', err);
+    });
 
-    // 订阅 store 变化，带防抖写入
+    // 订阅 store 变化，带防抖写入 SQLite
     const unsubChat = useChatStore.subscribe(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (state: any) => {
