@@ -80,9 +80,15 @@ async function request(
     let contentType = headers['Content-Type'] || '';
 
     if (body instanceof Blob) {
-      // Blob → base64
+      // Blob → base64（分块转换避免栈溢出）
       const buffer = await body.arrayBuffer();
-      requestBody = btoa(String.fromCharCode(...new Uint8Array(buffer)));
+      const bytes = new Uint8Array(buffer);
+      let binary = '';
+      const chunkSize = 8192;
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        binary += String.fromCharCode(...bytes.slice(i, i + chunkSize));
+      }
+      requestBody = btoa(binary);
       contentType = body.type || 'application/octet-stream';
     } else if (typeof body === 'string') {
       requestBody = body;
