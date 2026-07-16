@@ -117,8 +117,10 @@ export async function initDatabase(): Promise<void> {
 
   initPromise = (async () => {
     try {
-      // 加载 sql.js WASM
-      SQL = await initSqlJs();
+      // 加载 sql.js WASM（locateFile 指向 public/ 中的 wasm 文件）
+      SQL = await initSqlJs({
+        locateFile: (file: string) => `/${file}`,
+      });
 
       // 尝试从 IndexedDB 加载已保存的数据库
       const saved = await loadSavedDB();
