@@ -12,7 +12,7 @@ export default function RestorePage({ onBack }: Props) {
   const [manifest, setManifest] = useState<BackupManifest | null>(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
-  const [restoredStores, setRestoredStores] = useState<string[]>([]);
+  const [restored, setRestored] = useState<string[]>([]);
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -44,11 +44,11 @@ export default function RestorePage({ onBack }: Props) {
     setBusy(true);
     setResult(null);
     try {
-      const { stores } = await restoreFromZip(file);
-      setRestoredStores(stores);
+      const { restored } = await restoreFromZip(file);
+      setRestored(restored);
       setResult({
         ok: true,
-        msg: `已恢复 ${stores.length} 个数据存储。某些更改可能需要刷新页面后生效。`,
+        msg: `已恢复 ${restored.length} 个数据项。刷新页面后生效。`,
       });
     } catch (err) {
       setResult({ ok: false, msg: `恢复失败: ${(err as Error).message}` });
@@ -106,12 +106,8 @@ export default function RestorePage({ onBack }: Props) {
                   <span>{manifest.includedKeys ? '是' : '否'}</span>
                 </div>
                 <div className="settings-card__info-row">
-                  <span>数据存储</span>
-                  <span>{manifest.stores.length} 个</span>
-                </div>
-                <div className="settings-card__info-row">
-                  <span>IndexedDB</span>
-                  <span>{manifest.hasIndexedDB ? '有' : '无'}</span>
+                  <span>数据库大小</span>
+                  <span>{(manifest.databaseSize / 1024).toFixed(1)} KB</span>
                 </div>
               </div>
 
@@ -133,9 +129,9 @@ export default function RestorePage({ onBack }: Props) {
             </div>
           )}
 
-          {restoredStores.length > 0 && (
+          {restored.length > 0 && (
             <div className="settings-field__hint settings-field__hint--ok" style={{ marginTop: 8 }}>
-              已恢复: {restoredStores.join(', ')}
+              已恢复: {restored.join(', ')}
             </div>
           )}
         </div>

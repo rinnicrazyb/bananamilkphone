@@ -19,6 +19,7 @@ import NetworkSearchPage from './NetworkSearchPage';
 import MCPSettingsPage from './MCPSettingsPage';
 import BackupPage from './BackupPage';
 import RestorePage from './RestorePage';
+import WebDAVPage from './WebDAVPage';
 
 /* ───── 子页面路由 ───── */
 function renderSubPage(page: SettingsSubPage, onBack: () => void) {
@@ -33,6 +34,8 @@ function renderSubPage(page: SettingsSubPage, onBack: () => void) {
       return <BackupPage onBack={onBack} />;
     case 'restore':
       return <RestorePage onBack={onBack} />;
+    case 'webdav':
+      return <WebDAVPage onBack={onBack} />;
     default:
       return null;
   }
@@ -176,9 +179,10 @@ export default function SettingsPage() {
             label="本地恢复"
             onClick={() => setSubPage('restore')}
           />
-          <MenuRowComingSoon
+          <MenuRow
             icon={<CloudArrowDown size={22} />}
             label="WebDAV 同步"
+            onClick={() => setSubPage('webdav')}
           />
         </MenuSection>
 

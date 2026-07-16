@@ -68,4 +68,20 @@ export type SettingsSubPage =
   | 'mcp'
   | 'backup'
   | 'restore'
+  | 'webdav'
   | null;
+
+/** WebDAV 配置 */
+export interface WebDAVConfig {
+  url: string;
+  username: string;
+  password: string;
+  remotePath: string;
+}
+
+export const DEFAULT_WEBDAV_CONFIG: WebDAVConfig = {
+  url: '',
+  username: '',
+  password: '',
+  remotePath: 'bananamilkphone_backups/',
+};

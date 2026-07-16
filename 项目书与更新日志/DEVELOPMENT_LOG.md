@@ -631,3 +631,88 @@ src/services/backup/index.ts          # ✏️ 更新（备份读写 SQLite）
 npm run build  # ✅ 通过（TypeScript 零错误，4634 模块转换，683KB JS bundle）
 git push       # ✅ 已推送到 GitHub（commit 560b354）
 ```
+
+---
+
+## 2026-07-17（续2）：jeep-sqlite Vite 兼容失败 + RikkaHub 备份/同步架构学习
+
+### jeep-sqlite 故障记录
+
+**现象**：浏览器控制台 404 报错 `p-6e83e397.entry.js:1 Failed to load resource`，`Constructor for "jeep-sqlite#undefined" was not found`
+
+**根因**：jeep-sqlite 是 StencilJS 构建的 Web Component，其运行时通过 `import.meta.url` 动态加载分块文件（`p-*.entry.js`）。Vite 在开发模式下重写模块路径，但无法正确处理 StencilJS 的分块加载机制，导致 404。
+
+**结论**：`@capacitor-community/sqlite` 的 web 实现依赖 jeep-sqlite 自定义元素，在 Vite 环境下兼容成本过高，这条路不适合继续走。
+
+### RikkaHub 备份/同步架构学习笔记
+
+> 学习来源：`C:\refs\rikkahub-master`
+
+#### 数据存储架构
+
+| 组件 | RikkaHub 方案 | 对我们的参考价值 |
+|------|--------------|----------------|
+| 主数据库 | Room (SQLite + WAL) v24，8 个实体 | 单文件 `.db` 可直接复制备份 |
+| 配置文件 | Jetpack DataStore (Preferences) | 序列化为 JSON 随 ZIP 导出 |
+| 文件存储 | `filesDir/upload/`, `skills/`, `fonts/` | 媒体文件独立目录管理 |
+| DB 版本管理 | 自动迁移 + 自定义迁移脚本 | 需要引入 Schema 版本管理 |
+
+#### 备份格式（ZIP 包结构）
+
+RikkaHub 的备份核心：**一次性全量打包，统一格式，多通道传输**。
+
+```
+backup_20240101_120000.zip
+├── settings.json              # 所有配置（含 API Key/提供商）
+├── rikka_hub.db               # SQLite 数据库文件（直接复制）
+├── rikka_hub-wal              # WAL 日志（事务完整性）
+├── rikka_hub-shm              # 共享内存文件
+├── upload/<filename>          # 用户上传文件
+├── skills/<skill_name>/...    # Skills 文件
+└── fonts/<font_name>          # 字体文件
+```
+
+**关键设计**：`prepareBackupFile()` 和 `restoreFromBackupFile()` 是核心方法，被本地导出、WebDAV、S3 三个通道共用——**同一套 ZIP 格式，不同的传输层**。
+
+#### 传输通道（三个独立但镜像的实现）
+
+| 通道 | 客户端 | 操作 | 说明 |
+|------|--------|------|------|
+| **本地导出/导入** | Android `ActivityResultContracts` | 系统文件选择器 → 复制 ZIP | 最基础的离线备份 |
+| **WebDAV** | `WebDavClient.kt`（ktor HTTP） | PROPFIND/PUT/GET/DELETE/MKCOL | HTTP 基础认证，默认路径 `rikkahub_backups/` |
+| **S3** | `S3Client.kt` + `AwsSignatureV4` | GET/PUT/LIST/DELETE + AWS V4 签名 | 兼容 MinIO/Cloudflare R2 等 S3 服务 |
+
+三个通道共享同一套 ZIP 打包/解包逻辑，区别仅在于传输协议。
+
+#### 备份恢复流程
+
+```
+备份：
+  用户触发 → 打包 settings.json + 复制 .db 文件 + 收集 upload/skills/fonts/
+           → 生成 ZIP → 写入本地 / 上传 WebDAV / 上传 S3
+
+恢复：
+  选择备份文件 → 解压 ZIP
+               → settings.json → 覆盖配置
+               → .db + -wal + -shm → 覆盖数据库文件
+               → upload/* / skills/* / fonts/* → 覆盖对应目录
+               → 重启应用 (exitProcess(0))
+```
+
+#### 与我们当前备份方案的对比
+
+| 维度 | RikkaHub | 我们当前 |
+|------|---------|---------|
+| 数据读取 | **直接复制 `.db` 文件**（Room 关闭连接后） | 逐 key 读 JSON → 拼 ZIP（中间层多） |
+| 恢复方式 | **覆盖 `.db` 文件 + 重启**（原子操作） | 逐 key 写回 SQLite |
+| 文件数据 | `filesDir/` 真实文件，直接打包 | dataURL 嵌在 JSON 中（ZIP 膨胀 ~33%） |
+| 传输通道 | 本地/WebDAV/S3 三通道统一格式 | 仅本地下载，WebDAV 未开发 |
+| 浏览器支持 | Android 原生，不需要浏览器 | 需要同时支持 `npm run dev` 和 APK |
+
+**核心差异**：RikkaHub 因为是原生 Android 应用，可以直接操作 `.db` 文件。我们的是 Capacitor WebView 应用，数据库通过 sql.js（浏览器）或原生 SQLite（Android）访问，无法直接复制文件。
+
+#### 对香蕉牛奶机的启示
+
+1. **ZIP 格式统一**：保持本地备份/WebDAV/S3 同一套格式，复用 `createBackup` 和 `restoreFromZip` 核心逻辑
+2. **WebDAV 作为云端同步**：参考 `WebDavClient.kt` 实现（PROPFIND/PUT/GET/DELETE + 基础认证）
+3. **数据源问题待解决**：备份卡住的根因是 SQLite web 层 jeep-sqlite 与 Vite 不兼容，需要在 grill-me 中讨论替代方案

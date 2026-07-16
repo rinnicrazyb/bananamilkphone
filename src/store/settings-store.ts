@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { LLMConfig } from '../services/llm/types';
-import type { MCPServer, SearchProviders, LLMPreset } from '../apps/settings/types';
-import { DEFAULT_SEARCH_PROVIDERS } from '../apps/settings/types';
+import type { MCPServer, SearchProviders, LLMPreset, WebDAVConfig } from '../apps/settings/types';
+import { DEFAULT_SEARCH_PROVIDERS, DEFAULT_WEBDAV_CONFIG } from '../apps/settings/types';
 import { sqliteStorageAdapter } from '../services/sqlite/index';
 
 export interface SettingsState {
@@ -11,6 +11,7 @@ export interface SettingsState {
   searchProviders: SearchProviders;
   mcpServers: MCPServer[];
   notificationsEnabled: boolean;
+  webdavConfig: WebDAVConfig;
 }
 
 export interface SettingsActions {
@@ -26,6 +27,7 @@ export interface SettingsActions {
   updateMCPServer: (id: string, data: Partial<MCPServer>) => void;
   removeMCPServer: (id: string) => void;
   setNotificationsEnabled: (enabled: boolean) => void;
+  updateWebDAVConfig: (config: Partial<WebDAVConfig>) => void;
 }
 
 export const useSettingsStore = create<SettingsState & SettingsActions>()(
@@ -43,6 +45,7 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
       searchProviders: { ...DEFAULT_SEARCH_PROVIDERS },
       mcpServers: [],
       notificationsEnabled: false,
+      webdavConfig: { ...DEFAULT_WEBDAV_CONFIG },
 
       // ---- Actions ----
       updateLLMConfig: (config) =>
@@ -94,6 +97,10 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
 
       setNotificationsEnabled: (enabled) =>
         set({ notificationsEnabled: enabled }),
+      updateWebDAVConfig: (config) =>
+        set((state) => ({
+          webdavConfig: { ...state.webdavConfig, ...config },
+        })),
     }),
     {
       name: 'settings-store',
@@ -115,6 +122,10 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
           for (const key of ['tavily', 'firecrawl', 'tinyfish']) {
             state.searchProviders[key] = { ...defaults[key as keyof typeof defaults], ...state.searchProviders[key] };
           }
+        }
+        // 补全 webdavConfig 默认值
+        if (!state.webdavConfig) {
+          state.webdavConfig = { url: '', username: '', password: '', remotePath: 'bananamilkphone_backups/' };
         }
         return state;
       },

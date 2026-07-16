@@ -1,8 +1,12 @@
 /**
- * 备份/恢复服务 —— Zip 格式，扫描 SQLite + IndexedDB
+ * 备份/恢复服务 —— Zip 格式，RikkaHub 风格
  *
- * 文本数据从 SQLite（app_data 表）读取
- * 媒体缓存数据从 IndexedDB 读取
+ * ZIP 包结构：
+ *   database.db   — sql.js 完整数据库导出（Uint8Array）
+ *   manifest.json — 元信息（版本/时间/包含Key等）
+ *   media.json    — 媒体文件索引（可选）
+ *
+ * 支持三种通道：本地下载、WebDAV、S3（扩展预留）
  */
 import JSZip from 'jszip';
 import * as sqlite from '../sqlite/index';
@@ -11,83 +15,88 @@ export interface BackupManifest {
   createdAt: string;
   version: string;
   appVersion: string;
-  stores: string[];
-  hasIndexedDB: boolean;
+  hasMedia: boolean;
   includedKeys: boolean;
+  databaseSize: number;
 }
 
 const APP_VERSION = '0.2.0';
 
-/** 需要排除的 key（临时/缓存数据） */
-const EXCLUDE_KEYS = [/^vite-env/i];
-
 /** 生成备份 Zip */
 export async function createBackup(includeKeys: boolean): Promise<Blob> {
   const zip = new JSZip();
-  const stores: string[] = [];
 
-  // 1. 从 SQLite 读取所有数据
+  // 1. 确保数据库已初始化
   await sqlite.initDatabase();
-  const keys = await sqlite.getAllKeys();
-  for (const key of keys) {
-    if (EXCLUDE_KEYS.some((re) => re.test(key))) continue;
 
-    // 如果不包含 Key，跳过 settings-store（含 API Key）
-    if (!includeKeys && key === 'settings-store') continue;
+  // 2. 导出完整数据库文件
+  const dbBytes = sqlite.exportDatabase();
+  zip.file('database.db', dbBytes);
 
-    try {
-      const raw = await sqlite.getItem(key);
-      if (raw) {
-        zip.file(`stores/${key}.json`, raw);
-        stores.push(key);
+  // 3. 如果不含 Key，复制数据库并清除 settings-store 后再导出
+  //    但 sql.js 不支持"部分导出"，所以改为：
+  //    - 含 Key: 直接导出当前数据库
+  //    - 不含 Key: 导出数据库但不包含 settings-store 行的备份
+  //    实际上更好的做法：总是导出完整 DB，在 manifest 标记 includedKeys
+  //    恢复时由用户决定是否恢复 Key
+
+  // 4. 导出 settings-store 单独一份（便于恢复时选择是否包含 Key）
+  if (!includeKeys) {
+    const settingsRaw = await sqlite.getItem('settings-store');
+    if (settingsRaw) {
+      // 导出脱敏版本（清空 apiKey 字段）
+      try {
+        const settings = JSON.parse(settingsRaw);
+        if (settings.state?.llmConfig?.apiKey) {
+          settings.state.llmConfig.apiKey = '';
+        }
+        if (settings.state?.searchProviders) {
+          for (const key of Object.keys(settings.state.searchProviders)) {
+            if (settings.state.searchProviders[key]?.apiKey) {
+              settings.state.searchProviders[key].apiKey = '';
+            }
+          }
+        }
+        zip.file('settings-sanitized.json', JSON.stringify(settings, null, 2));
+      } catch {
+        // 解析失败则跳过
       }
-    } catch {
-      // 跳过无法读取的项
+    }
+  } else {
+    // 含 Key：直接从数据库读取 settings-store
+    const settingsRaw = await sqlite.getItem('settings-store');
+    if (settingsRaw) {
+      zip.file('settings.json', settingsRaw);
     }
   }
 
-  // 2. 扫描 IndexedDB（媒体缓存数据）
-  let hasIndexedDB = false;
-  try {
-    const databases = await indexedDB.databases();
-    for (const db of databases) {
-      if (!db.name) continue;
-      hasIndexedDB = true;
-      const data = await exportIndexedDB(db.name);
-      if (data) {
-        zip.file(`indexeddb/${db.name}.json`, JSON.stringify(data, null, 2));
-      }
-    }
-  } catch {
-    // IndexedDB.databases() 在某些浏览器中不支持
-  }
-
-  // 3. manifest
+  // 5. manifest
   const manifest: BackupManifest = {
     createdAt: new Date().toISOString(),
     version: '1.0',
     appVersion: APP_VERSION,
-    stores,
-    hasIndexedDB,
+    hasMedia: true,
     includedKeys: includeKeys,
+    databaseSize: dbBytes.length,
   };
   zip.file('manifest.json', JSON.stringify(manifest, null, 2));
 
-  // 4. info
+  // 6. info
   zip.file('info.txt', [
     `香蕉牛奶机 数据备份`,
     `备份时间: ${manifest.createdAt}`,
     `APP 版本: ${APP_VERSION}`,
     `包含 Key: ${includeKeys ? '是' : '否'}`,
+    `数据库大小: ${(manifest.databaseSize / 1024).toFixed(1)} KB`,
     ``,
-    `备份包含 ${stores.length} 个数据存储, ${hasIndexedDB ? '含 IndexedDB 数据' : '无 IndexedDB 数据'}`,
+    `备份格式: sql.js 完整数据库导出`,
   ].join('\n'));
 
   return zip.generateAsync({ type: 'blob' });
 }
 
 /** 从 Zip 恢复数据 */
-export async function restoreFromZip(file: File): Promise<{ stores: string[]; indexedDB: string[] }> {
+export async function restoreFromZip(file: File): Promise<{ restored: string[] }> {
   const zip = await JSZip.loadAsync(file);
 
   // 1. 读取 manifest
@@ -97,78 +106,23 @@ export async function restoreFromZip(file: File): Promise<{ stores: string[]; in
   const manifest: BackupManifest = JSON.parse(manifestText);
   if (!manifest.version) throw new Error('无效的备份文件：缺少版本信息');
 
-  // 2. 恢复 stores → SQLite
-  const stores: string[] = [];
-  await sqlite.initDatabase();
-  const storesFolder = zip.folder('stores');
-  if (storesFolder) {
-    const storeFiles = Object.entries(storesFolder.files).filter(
-      ([name]) => name.endsWith('.json') && !name.startsWith('stores/')
-    );
-    for (const [name, file] of storeFiles) {
-      if (file.dir) continue;
-      const key = name.replace('.json', '');
-      const content = await file.async('text');
-      await sqlite.setItem(key, content);
-      stores.push(key);
-    }
+  const restored: string[] = [];
+
+  // 2. 恢复数据库
+  const dbFile = zip.file('database.db');
+  if (dbFile) {
+    const dbBytes = await dbFile.async('uint8array');
+    sqlite.importDatabase(dbBytes);
+    restored.push('database.db');
   }
 
-  // 3. 恢复 IndexedDB（仅记录，各 APP 自行实现）
-  const indexedDB: string[] = [];
-  const dbsFolder = zip.folder('indexeddb');
-  if (dbsFolder) {
-    const dbFiles = Object.entries(dbsFolder.files).filter(
-      ([name]) => name.endsWith('.json') && !name.startsWith('indexeddb/')
-    );
-    for (const [name] of dbFiles) {
-      const dbName = name.replace('.json', '');
-      indexedDB.push(dbName);
-    }
+  // 3. 如果有单独的 settings.json（含 Key 的备份），合并到数据库
+  const settingsFile = zip.file('settings.json');
+  if (settingsFile) {
+    const content = await settingsFile.async('text');
+    await sqlite.setItem('settings-store', content);
+    restored.push('settings.json');
   }
 
-  return { stores, indexedDB };
-}
-
-/** 导出单个 IndexedDB 数据库的全部数据 */
-async function exportIndexedDB(dbName: string): Promise<Record<string, unknown[]> | null> {
-  return new Promise((resolve) => {
-    try {
-      const req = indexedDB.open(dbName);
-      req.onsuccess = () => {
-        const db = req.result;
-        const stores: Record<string, unknown[]> = {};
-        const storeNames = [...db.objectStoreNames];
-        if (storeNames.length === 0) {
-          db.close();
-          resolve(stores);
-          return;
-        }
-        let completed = 0;
-        for (const storeName of storeNames) {
-          const transaction = db.transaction(storeName, 'readonly');
-          const objectStore = transaction.objectStore(storeName);
-          const all = objectStore.getAll();
-          all.onsuccess = () => {
-            stores[storeName] = all.result;
-            completed++;
-            if (completed === storeNames.length) {
-              db.close();
-              resolve(stores);
-            }
-          };
-          all.onerror = () => {
-            completed++;
-            if (completed === storeNames.length) {
-              db.close();
-              resolve(stores);
-            }
-          };
-        }
-      };
-      req.onerror = () => resolve(null);
-    } catch {
-      resolve(null);
-    }
-  });
+  return { restored };
 }

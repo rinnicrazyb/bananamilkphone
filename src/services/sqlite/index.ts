@@ -1,91 +1,164 @@
 /**
- * SQLite 服务层 —— 使用 @capacitor-community/sqlite
+ * SQLite 服务层 —— 使用 sql.js（纯 JS WebAssembly SQLite）
  *
- * 浏览器开发模式：sql.js (WebAssembly) 作为 SQLite 引擎，数据持久化到 IndexedDB
- * Android 生产环境：原生 SQLite
+ * 浏览器和 Android WebView 使用同一套实现：
+ * - 数据库在内存中运行（sql.js WASM）
+ * - 通过 IndexedDB 持久化（导出/导入 .db 二进制文件）
+ * - 写入防抖，避免频繁序列化
  *
- * 提供简单的 key-value 接口，与原有 localStorage 用法兼容。
+ * 备份时可直接导出完整 .db 文件，类似 RikkaHub 的备份策略。
  */
 
-import { CapacitorSQLite, SQLiteConnection } from '@capacitor-community/sqlite';
-import type { CapacitorSQLitePlugin } from '@capacitor-community/sqlite';
-import { Capacitor } from '@capacitor/core';
+import initSqlJs from 'sql.js';
+import type { SqlJsStatic, Database } from 'sql.js';
 
-const DB_NAME = 'bananamilkphone';
+// ─── 初始化状态 ──────────────────────────────────
 
-interface DbRow {
-  value: string;
-}
-
-let sqliteConnection: SQLiteConnection | null = null;
-let db: Awaited<ReturnType<SQLiteConnection['createConnection']>> | null = null;
-
+let SQL: SqlJsStatic | null = null;
+let db: Database | null = null;
 let initPromise: Promise<void> | null = null;
 let initDone = false;
 
-/** 获取平台信息 */
-function getPlatform(): 'web' | 'android' | 'ios' {
-  return Capacitor.getPlatform() as 'web' | 'android' | 'ios';
+// ─── IndexedDB 持久化（保存/加载 .db 文件） ────────
+
+const PERSIST_DB_NAME = 'bananamilkphone-sqlite';
+const PERSIST_STORE = 'database';
+const PERSIST_KEY = 'db-bytes';
+
+function openPersistDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(PERSIST_DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const d = req.result;
+      if (!d.objectStoreNames.contains(PERSIST_STORE)) {
+        d.createObjectStore(PERSIST_STORE, { keyPath: 'key' });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
 }
 
-/**
- * 初始化数据库
- * - 创建连接
- * - 建表（app_data 用于文本数据，media 用于媒体文件）
- * - 清空旧的 localStorage 数据（一次性迁移）
- */
+/** 从 IndexedDB 加载已保存的数据库文件 */
+async function loadSavedDB(): Promise<Uint8Array | null> {
+  try {
+    const persistDB = await openPersistDB();
+    return new Promise((resolve, reject) => {
+      const tx = persistDB.transaction(PERSIST_STORE, 'readonly');
+      const req = tx.objectStore(PERSIST_STORE).get(PERSIST_KEY);
+      req.onsuccess = () => {
+        const row = req.result;
+        if (row?.value) {
+          resolve(new Uint8Array(row.value));
+        } else {
+          resolve(null);
+        }
+        persistDB.close();
+      };
+      req.onerror = () => {
+        persistDB.close();
+        reject(req.error);
+      };
+    });
+  } catch {
+    return null;
+  }
+}
+
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** 将当前数据库保存到 IndexedDB（带防抖） */
+function saveDBToIndexedDB(): void {
+  if (saveTimer) clearTimeout(saveTimer);
+
+  saveTimer = setTimeout(async () => {
+    if (!db) return;
+    try {
+      const data = db.export(); // Uint8Array
+      const persistDB = await openPersistDB();
+      const tx = persistDB.transaction(PERSIST_STORE, 'readwrite');
+      tx.objectStore(PERSIST_STORE).put({ key: PERSIST_KEY, value: Array.from(data) });
+      await new Promise<void>((resolve, reject) => {
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+      persistDB.close();
+    } catch (err) {
+      console.warn('[SQLite] Save to IndexedDB failed:', err);
+    }
+  }, 500);
+}
+
+/** 立即保存（页面关闭前） */
+function saveDBImmediately(): void {
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+  if (!db) return;
+  try {
+    const data = db.export();
+    openPersistDB().then((persistDB) => {
+      const tx = persistDB.transaction(PERSIST_STORE, 'readwrite');
+      tx.objectStore(PERSIST_STORE).put({ key: PERSIST_KEY, value: Array.from(data) });
+      tx.oncomplete = () => persistDB.close();
+    });
+  } catch {
+    // 静默失败
+  }
+}
+
+// ─── 数据库初始化 ──────────────────────────────────
+
+/** 初始化 sql.js 数据库 */
 export async function initDatabase(): Promise<void> {
   if (initDone) return;
   if (initPromise) return initPromise;
 
   initPromise = (async () => {
     try {
-      const platform = getPlatform();
+      // 加载 sql.js WASM
+      SQL = await initSqlJs();
 
-      // @capacitor-community/sqlite 初始化
-      sqliteConnection = new SQLiteConnection(CapacitorSQLite as CapacitorSQLitePlugin);
-
-      // Web 平台需要额外初始化 sql.js 存储
-      if (platform === 'web') {
-        await sqliteConnection.initWebStore();
+      // 尝试从 IndexedDB 加载已保存的数据库
+      const saved = await loadSavedDB();
+      if (saved) {
+        db = new SQL.Database(saved);
+      } else {
+        db = new SQL.Database();
+        // 首次初始化：建表
+        db.run(`
+          CREATE TABLE IF NOT EXISTS app_data (
+            key TEXT PRIMARY KEY NOT NULL,
+            value TEXT NOT NULL,
+            updated_at INTEGER NOT NULL
+          )
+        `);
+        db.run(`
+          CREATE TABLE IF NOT EXISTS media (
+            key TEXT PRIMARY KEY NOT NULL,
+            value TEXT NOT NULL,
+            updated_at INTEGER NOT NULL
+          )
+        `);
+        // 新数据库立即持久化
+        saveDBToIndexedDB();
       }
 
-      // 创建数据库连接
-      db = await sqliteConnection.createConnection(DB_NAME, false, 'no-encryption', 1, false);
-      await db.open();
+      // 确保表存在（兼容旧数据库文件）
+      db.run(`CREATE TABLE IF NOT EXISTS app_data (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL, updated_at INTEGER NOT NULL)`);
+      db.run(`CREATE TABLE IF NOT EXISTS media (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL, updated_at INTEGER NOT NULL)`);
 
-      // 建表：app_data — 文本/结构化数据（JSON 序列化）
-      await db.execute(`
-        CREATE TABLE IF NOT EXISTS app_data (
-          key TEXT PRIMARY KEY NOT NULL,
-          value TEXT NOT NULL,
-          updated_at INTEGER NOT NULL
-        )
-      `);
+      // 页面关闭前保存
+      window.addEventListener('beforeunload', saveDBImmediately);
 
-      // 建表：media — 媒体文件（base64 dataURL）
-      await db.execute(`
-        CREATE TABLE IF NOT EXISTS media (
-          key TEXT PRIMARY KEY NOT NULL,
-          value TEXT NOT NULL,
-          updated_at INTEGER NOT NULL
-        )
-      `);
-
-      // Web 平台：保存数据库到持久化存储（IndexedDB 后端）
-      if (platform === 'web') {
-        await sqliteConnection.saveToStore(DB_NAME);
-      }
-
-      // 清空旧 localStorage 数据（一次性操作）
+      // 清空旧 localStorage（一次性）
       try {
         localStorage.removeItem('bananamilkphone-data');
         localStorage.removeItem('settings-store');
-      } catch {
-        // localStorage 可能不可用（如某些 WebView），忽略
-      }
+      } catch { /* ignore */ }
 
-      console.log('[SQLite] Database initialized successfully');
+      console.log('[SQLite] sql.js initialized successfully');
       initDone = true;
     } catch (err) {
       console.error('[SQLite] Initialization failed:', err);
@@ -96,24 +169,24 @@ export async function initDatabase(): Promise<void> {
   return initPromise;
 }
 
-/** 等待数据库初始化完成 */
-async function ensureDb() {
-  if (!initDone) {
-    await initDatabase();
-  }
+// ─── 工具 ──────────────────────────────────────────
+
+function ensureDB(): Database {
   if (!db) throw new Error('[SQLite] Database not initialized');
   return db;
 }
 
-// ─── app_data 操作（文本/结构化数据） ──────────────────
+// ─── app_data 操作 ─────────────────────────────────
 
-/** 读取一条数据（返回 JSON 字符串或 null） */
+/** 读取一条数据 */
 export async function getItem(key: string): Promise<string | null> {
+  await initDatabase();
   try {
-    const database = await ensureDb();
-    const result = await database.query(`SELECT value FROM app_data WHERE key = ?`, [key]);
-    const rows = result.values as unknown[] as DbRow[];
-    return rows.length > 0 ? rows[0].value : null;
+    const result = ensureDB().exec(`SELECT value FROM app_data WHERE key = ?`, [key]);
+    if (result.length > 0 && result[0].values.length > 0) {
+      return result[0].values[0][0] as string;
+    }
+    return null;
   } catch (err) {
     console.warn(`[SQLite] getItem("${key}") failed:`, err);
     return null;
@@ -122,17 +195,13 @@ export async function getItem(key: string): Promise<string | null> {
 
 /** 写入一条数据 */
 export async function setItem(key: string, value: string): Promise<void> {
+  await initDatabase();
   try {
-    const database = await ensureDb();
-    await database.run(
+    ensureDB().run(
       `INSERT OR REPLACE INTO app_data (key, value, updated_at) VALUES (?, ?, ?)`,
       [key, value, Date.now()]
     );
-
-    // Web 平台：每次写入后保存到持久化存储
-    if (getPlatform() === 'web') {
-      await sqliteConnection!.saveToStore(DB_NAME);
-    }
+    saveDBToIndexedDB();
   } catch (err) {
     console.warn(`[SQLite] setItem("${key}") failed:`, err);
   }
@@ -140,25 +209,24 @@ export async function setItem(key: string, value: string): Promise<void> {
 
 /** 删除一条数据 */
 export async function removeItem(key: string): Promise<void> {
+  await initDatabase();
   try {
-    const database = await ensureDb();
-    await database.run(`DELETE FROM app_data WHERE key = ?`, [key]);
-
-    if (getPlatform() === 'web') {
-      await sqliteConnection!.saveToStore(DB_NAME);
-    }
+    ensureDB().run(`DELETE FROM app_data WHERE key = ?`, [key]);
+    saveDBToIndexedDB();
   } catch (err) {
     console.warn(`[SQLite] removeItem("${key}") failed:`, err);
   }
 }
 
-/** 获取所有 key（用于备份） */
+/** 获取所有 key */
 export async function getAllKeys(): Promise<string[]> {
+  await initDatabase();
   try {
-    const database = await ensureDb();
-    const result = await database.query(`SELECT key FROM app_data ORDER BY key`, []);
-    const rows = result.values as unknown as Array<{ key: string }>;
-    return rows.map((r) => r.key);
+    const result = ensureDB().exec(`SELECT key FROM app_data ORDER BY key`);
+    if (result.length > 0) {
+      return result[0].values.map((row: unknown[]) => row[0] as string);
+    }
+    return [];
   } catch (err) {
     console.warn('[SQLite] getAllKeys failed:', err);
     return [];
@@ -167,33 +235,27 @@ export async function getAllKeys(): Promise<string[]> {
 
 /** 清空所有数据 */
 export async function clearAll(): Promise<void> {
+  await initDatabase();
   try {
-    const database = await ensureDb();
-    await database.execute(`DELETE FROM app_data`);
-    await database.execute(`DELETE FROM media`);
-
-    if (getPlatform() === 'web') {
-      await sqliteConnection!.saveToStore(DB_NAME);
-    }
+    ensureDB().run(`DELETE FROM app_data`);
+    ensureDB().run(`DELETE FROM media`);
+    saveDBToIndexedDB();
   } catch (err) {
     console.warn('[SQLite] clearAll failed:', err);
   }
 }
 
-// ─── media 操作（图片/媒体文件） ────────────────────
+// ─── media 操作 ────────────────────────────────────
 
-/** 保存媒体文件（base64 dataURL） */
+/** 保存媒体文件 */
 export async function saveMedia(key: string, dataUrl: string): Promise<void> {
+  await initDatabase();
   try {
-    const database = await ensureDb();
-    await database.run(
+    ensureDB().run(
       `INSERT OR REPLACE INTO media (key, value, updated_at) VALUES (?, ?, ?)`,
       [key, dataUrl, Date.now()]
     );
-
-    if (getPlatform() === 'web') {
-      await sqliteConnection!.saveToStore(DB_NAME);
-    }
+    saveDBToIndexedDB();
   } catch (err) {
     console.warn(`[SQLite] saveMedia("${key}") failed:`, err);
   }
@@ -201,11 +263,13 @@ export async function saveMedia(key: string, dataUrl: string): Promise<void> {
 
 /** 读取媒体文件 */
 export async function getMedia(key: string): Promise<string | null> {
+  await initDatabase();
   try {
-    const database = await ensureDb();
-    const result = await database.query(`SELECT value FROM media WHERE key = ?`, [key]);
-    const rows = result.values as unknown[] as DbRow[];
-    return rows.length > 0 ? rows[0].value : null;
+    const result = ensureDB().exec(`SELECT value FROM media WHERE key = ?`, [key]);
+    if (result.length > 0 && result[0].values.length > 0) {
+      return result[0].values[0][0] as string;
+    }
+    return null;
   } catch (err) {
     console.warn(`[SQLite] getMedia("${key}") failed:`, err);
     return null;
@@ -214,46 +278,45 @@ export async function getMedia(key: string): Promise<string | null> {
 
 /** 删除媒体文件 */
 export async function deleteMedia(key: string): Promise<void> {
+  await initDatabase();
   try {
-    const database = await ensureDb();
-    await database.run(`DELETE FROM media WHERE key = ?`, [key]);
-
-    if (getPlatform() === 'web') {
-      await sqliteConnection!.saveToStore(DB_NAME);
-    }
+    ensureDB().run(`DELETE FROM media WHERE key = ?`, [key]);
+    saveDBToIndexedDB();
   } catch (err) {
     console.warn(`[SQLite] deleteMedia("${key}") failed:`, err);
   }
 }
 
-/** 生成唯一的媒体 key */
+/** 生成唯一媒体 key */
 export function generateMediaKey(prefix: string, ext: string = 'png'): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
 }
 
-// ─── Zustand persist 中间件适配器 ─────────────────
+// ─── 数据库导出（用于备份） ─────────────────────────
 
-/**
- * 用于 Zustand `persist` 中间件的 storage 适配器
- * 替换默认的 localStorage，使用 SQLite
- *
- * 用法：
- *   persist(
- *     (set) => ({ ... }),
- *     {
- *       name: 'settings-store',
- *       storage: sqliteStorageAdapter,  // 替代默认 localStorage
- *     }
- *   )
- */
+/** 导出完整数据库为 Uint8Array */
+export function exportDatabase(): Uint8Array {
+  ensureDB();
+  return db!.export();
+}
+
+/** 从 Uint8Array 导入数据库（用于恢复） */
+export function importDatabase(data: Uint8Array): void {
+  if (db) db.close();
+  db = new SQL!.Database(data);
+  saveDBToIndexedDB();
+}
+
+// ─── Zustand persist 适配器 ─────────────────────────
+
 export const sqliteStorageAdapter = {
-  async getItem(name: string): Promise<string | null> {
+  getItem(name: string): Promise<string | null> {
     return getItem(name);
   },
-  async setItem(name: string, value: string): Promise<void> {
+  setItem(name: string, value: string): Promise<void> {
     return setItem(name, value);
   },
-  async removeItem(name: string): Promise<void> {
+  removeItem(name: string): Promise<void> {
     return removeItem(name);
   },
 };
