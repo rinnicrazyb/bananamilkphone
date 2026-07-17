@@ -178,19 +178,24 @@ export default function ContextPreviewPage({ onBack }: Props) {
           <span className="context-summary__detail">系统 {sysTok} · 历史 {histTok}{toolDefs.length > 0 ? ` · 工具定义 ≈ ${tdTokens}` : ''}{allMems.length > 0 ? ` · ${allMems.length} 条记忆` : ''}</span>
         </div>
 
-        {/* 1: 世界书注入·系统提示词前 */}
-        {wbBefore.map((inj) => (
-          <details key={inj.id} className="context-block" open>
+        {/* 1: 世界书注入·系统提示词前（合并） */}
+        {wbBefore.length > 0 && (
+          <details className="context-block">
             <summary className="context-block__header">
               <span className="context-block__tag" style={{ background: '#e8a87c', color: '#fff' }}><BookOpenText size={12} /> 世界书注入·系统提示词前</span>
-              <span className="context-block__tokens">{inj.sourceBook} · ≈ {estimateTokens(inj.content)} tokens</span>
+              <span className="context-block__tokens">{wbBefore.length} 条 · ≈ {wbBefore.reduce((s: number, i: any) => s + estimateTokens(i.content), 0)} tokens</span>
             </summary>
-            <pre className="context-block__content">{inj.content}</pre>
+            {wbBefore.map((inj: any) => (
+              <div key={inj.id} style={{ padding: '8px 12px', borderBottom: '1px solid var(--app-border)' }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--app-primary)' }}>{inj.sourceBook} → {inj.sourceEntry}</div>
+                <pre className="context-block__content" style={{ marginTop: 4 }}>{inj.content}</pre>
+              </div>
+            ))}
           </details>
-        ))}
+        )}
 
         {/* 2: 系统提示词 */}
-        <details className="context-block" open>
+        <details className="context-block">
           <summary className="context-block__header">
             <span className="context-block__tag context-block__tag--static">系统提示词</span>
             <span className="context-block__tokens">≈ {estimateTokens(agent?.settings.systemPrompt || '')} tokens</span>
@@ -198,20 +203,25 @@ export default function ContextPreviewPage({ onBack }: Props) {
           <pre className="context-block__content">{agent?.settings.systemPrompt || '（空）'}</pre>
         </details>
 
-        {/* 3: 世界书注入·系统提示词后 */}
-        {wbAfter.map((inj) => (
-          <details key={inj.id} className="context-block" open>
+        {/* 3: 世界书注入·系统提示词后（合并） */}
+        {wbAfter.length > 0 && (
+          <details className="context-block">
             <summary className="context-block__header">
               <span className="context-block__tag" style={{ background: '#e8a87c', color: '#fff' }}><BookOpenText size={12} /> 世界书注入·系统提示词后</span>
-              <span className="context-block__tokens">{inj.sourceBook} · ≈ {estimateTokens(inj.content)} tokens</span>
+              <span className="context-block__tokens">{wbAfter.length} 条 · ≈ {wbAfter.reduce((s: number, i: any) => s + estimateTokens(i.content), 0)} tokens</span>
             </summary>
-            <pre className="context-block__content">{inj.content}</pre>
+            {wbAfter.map((inj: any) => (
+              <div key={inj.id} style={{ padding: '8px 12px', borderBottom: '1px solid var(--app-border)' }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--app-primary)' }}>{inj.sourceBook} → {inj.sourceEntry}</div>
+                <pre className="context-block__content" style={{ marginTop: 4 }}>{inj.content}</pre>
+              </div>
+            ))}
           </details>
-        ))}
+        )}
 
         {/* 4: 记忆注入 */}
         {allMems.length > 0 && (
-          <details className="context-block" open>
+          <details className="context-block">
             <summary className="context-block__header">
               <span className="context-block__tag context-block__tag--memory">记忆注入</span>
               <span className="context-block__tokens">{allMems.length} 条 · ≈ {estimateTokens(allMems.map((m: any) => m.content).join('\n'))} tokens</span>
@@ -220,39 +230,53 @@ export default function ContextPreviewPage({ onBack }: Props) {
           </details>
         )}
 
-        {/* 5: 工具定义 */}
+        {/* 5: 工具定义（按来源分类） */}
         {toolDefs.length > 0 && (
-          <details className="context-block" open>
+          <details className="context-block">
             <summary className="context-block__header">
               <span className="context-block__tag context-block__tag--tool">工具定义 <Sparkle size={14} weight="fill" /></span>
               <span className="context-block__tokens">{toolDefs.length} 个 · ≈ {tdTokens} tokens（占用 prompt）</span>
             </summary>
-            <div style={{ padding: '4px 0' }}>
-              {toolDefs.map((td) => (
-                <div key={td.name} style={{ padding: '8px 12px', borderBottom: '1px solid var(--app-border)', fontSize: 13 }}>
-                  <div style={{ fontWeight: 600, fontFamily: 'monospace', marginBottom: 2 }}><Wrench size={14} /> {td.name}</div>
-                  <div style={{ color: 'var(--app-text-secondary)', fontSize: 12 }}>{td.description}</div>
-                  <div style={{ fontSize: 11, color: 'var(--app-primary)' }}>来源: {td.source}</div>
-                </div>
-              ))}
-            </div>
+            {(() => {
+              const groups: Record<string, typeof toolDefs> = {};
+              for (const td of toolDefs) {
+                const key = td.source.startsWith('MCP') ? 'MCP 工具' : td.source.startsWith('搜索') ? '网络搜索' : '本地工具';
+                if (!groups[key]) groups[key] = [];
+                groups[key].push(td);
+              }
+              return Object.entries(groups).map(([cat, items]) => (
+                <details key={cat} style={{ margin: '4px 0' }}>
+                  <summary style={{ cursor: 'pointer', fontWeight: 500, fontSize: 12, padding: '4px 8px', background: 'var(--app-secondary)' }}>
+                    {cat}（{items.length}）
+                  </summary>
+                  <div style={{ padding: '4px 0' }}>
+                    {items.map((td) => (
+                      <div key={td.name} style={{ padding: '6px 12px', borderBottom: '1px solid var(--app-border)', fontSize: 13 }}>
+                        <div style={{ fontWeight: 600, fontFamily: 'monospace', marginBottom: 2 }}><Wrench size={14} /> {td.name}</div>
+                        <div style={{ color: 'var(--app-text-secondary)', fontSize: 12 }}>{td.description}</div>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              ));
+            })()}
           </details>
         )}
 
-        {/* 6: 世界书注入·对话开头 */}
-        {topInj.map((d, i) => (
-          <details key={`top-${i}`} className="context-block" open>
+        {/* 6: 世界书注入·对话开头（合并） */}
+        {topInj.length > 0 && (
+          <details className="context-block">
             <summary className="context-block__header">
               <span className="context-block__tag" style={{ background: '#e8a87c', color: '#fff' }}><BookOpenText size={12} /> 世界书注入·对话开头</span>
-              <span className="context-block__tokens">{d.sourceBook} · {d.role === 'assistant' ? 'AI 角色' : '用户角色'}</span>
+              <span className="context-block__tokens">{topInj.length} 条</span>
             </summary>
-            <InjView inj={d} />
+            {topInj.map((d: any, i: number) => <InjView key={`top-${i}`} inj={d} />)}
           </details>
-        ))}
+        )}
 
         {/* 7: 对话历史（前半段） */}
         {historyBefore.length > 0 && (
-          <details className="context-block" open>
+          <details className="context-block">
             <summary className="context-block__header">
               <span className="context-block__tag context-block__tag--dynamic">对话历史{splitAt >= 0 ? '（前半段）' : ''}</span>
               <span className="context-block__tokens">≈ {historyBefore.reduce((s, m) => s + estimateTokens(m.content), 0)} tokens · {historyBefore.length} 条</span>
@@ -261,20 +285,20 @@ export default function ContextPreviewPage({ onBack }: Props) {
           </details>
         )}
 
-        {/* 8: 世界书注入·最新消息前/指定深度 */}
-        {bottomInj.map((d, i) => (
-          <details key={`bot-${i}`} className="context-block" open>
+        {/* 8: 世界书注入·最新消息前/指定深度（合并） */}
+        {bottomInj.length > 0 && (
+          <details className="context-block">
             <summary className="context-block__header">
-              <span className="context-block__tag" style={{ background: '#e8a87c', color: '#fff' }}><BookOpenText size={12} /> 世界书注入·{POSITION_LABELS[d.position] || d.position}</span>
-              <span className="context-block__tokens">{d.sourceBook} · {d.role === 'assistant' ? 'AI 角色' : '用户角色'} · {d.sourceEntry}</span>
+              <span className="context-block__tag" style={{ background: '#e8a87c', color: '#fff' }}><BookOpenText size={12} /> 世界书注入·注入消息</span>
+              <span className="context-block__tokens">{bottomInj.length} 条</span>
             </summary>
-            <InjView inj={d} />
+            {bottomInj.map((d: any, i: number) => <InjView key={`bot-${i}`} inj={d} />)}
           </details>
-        ))}
+        )}
 
         {/* 9: 对话历史（剩余部分） */}
         {historyAfter.length > 0 && (
-          <details className="context-block" open>
+          <details className="context-block">
             <summary className="context-block__header">
               <span className="context-block__tag context-block__tag--dynamic">对话历史（剩余部分）</span>
               <span className="context-block__tokens">≈ {historyAfter.reduce((s, m) => s + estimateTokens(m.content), 0)} tokens · {historyAfter.length} 条</span>
