@@ -143,6 +143,33 @@ export default function App() {
     return () => clearTimeout(timer);
   }, []);
 
+  // 通知服务初始化 + 消息事件监听
+  useEffect(() => {
+    import('./services/notification/index').then(({ initNotifications, notifyMessageReceived }) => {
+      initNotifications();
+
+      // 监听 AI 回复完成事件
+      import('./services/event-bus/index').then(({ eventBus }) => {
+        eventBus.on('chat:message-received', (data: any) => {
+          const { conversationId, content } = data;
+          if (!content) return;
+
+          // 动态导入 chat-store 判断是否需要弹通知
+          import('./apps/chat/store/chat-store').then(({ useChatStore }) => {
+            const state = useChatStore.getState();
+            if (state.activeConversationId === conversationId) return;
+
+            const conv = state.conversations.find((c) => c.id === conversationId);
+            const agent = state.agents.find((a) => a.id === conv?.agentId);
+            if (!agent) return;
+
+            notifyMessageReceived(agent.name, content.slice(0, 150), `/chat`);
+          });
+        });
+      });
+    });
+  }, []);
+
   return (
     <BrowserRouter>
       <AppRoutes />
