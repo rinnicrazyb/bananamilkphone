@@ -82,7 +82,7 @@ function createProxiedFetch(_serverUrl: string, serverHeaders: Record<string, st
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           target: url,
-          headers: { ...serverHeaders, ...(init?.headers || {}) },
+          headers: { ...serverHeaders, ...(init?.headers instanceof Headers ? Object.fromEntries(init.headers) : (init?.headers || {})) },
           body: init?.body?.toString() || '',
         }),
       });
