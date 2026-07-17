@@ -115,12 +115,14 @@ export default function MCPSettingsPage({ onBack }: Props) {
   const handleTest = useCallback(async (server: MCPServer) => {
     setTestingId(server.id);
     setTestResult((prev) => ({ ...prev, [server.id]: undefined as any }));
+    updateMCPServer(server.id, { status: 'connecting' });
     const conn = await testMCPConnection(server);
     if (conn.ok) {
       const tools = await discoverMCPTools(server);
-      updateMCPServer(server.id, { discoveredTools: tools });
+      updateMCPServer(server.id, { status: 'connected', discoveredTools: tools });
       setTestResult((prev) => ({ ...prev, [server.id]: { ...conn, toolCount: tools.length } }));
     } else {
+      updateMCPServer(server.id, { status: 'error', lastError: conn.error });
       setTestResult((prev) => ({ ...prev, [server.id]: conn }));
     }
     setTestingId(null);
