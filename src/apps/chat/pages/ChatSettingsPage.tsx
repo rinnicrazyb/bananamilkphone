@@ -1,6 +1,8 @@
 import { useState, useRef } from 'react';
-import { CaretLeft, UploadSimple, Trash, Wrench } from '@phosphor-icons/react';
+import type { ReactNode } from 'react';
+import { CaretLeft, UploadSimple, Trash, Wrench, MagnifyingGlass, Plugs, Code } from '@phosphor-icons/react';
 import { useChatStore } from '../store/chat-store';
+import { useSettingsStore } from '../../../store/settings-store';
 import { DEFAULT_DISPLAY_CONFIG } from '../types';
 import AvatarCrop from '../components/AvatarCrop';
 
@@ -116,6 +118,13 @@ export default function ChatSettingsPage({ onBack }: ChatSettingsPageProps) {
                 ))}
           </div>
         </div>
+
+        {/* 可用工具列表 */}
+        <ToolListDisplay
+          enabledSearchProviders={cfg.enabledSearchProviders ?? []}
+          enabledMCPServerIds={cfg.enabledMCPServerIds ?? []}
+          mcpServers={useSettingsStore.getState().mcpServers}
+        />
       </div>
 
       {cropSrc && (
@@ -125,6 +134,72 @@ export default function ChatSettingsPage({ onBack }: ChatSettingsPageProps) {
           onCancel={() => setCropSrc(null)}
         />
       )}
+    </div>
+  );
+}
+
+/** 可用工具列表 — 按分类展示只读工具 */
+function ToolListDisplay({ enabledSearchProviders, enabledMCPServerIds, mcpServers }: {
+  enabledSearchProviders: string[];
+  enabledMCPServerIds: string[];
+  mcpServers: Array<{ id: string; name: string; discoveredTools?: Array<{ name: string; description: string; enabled?: boolean }> }>;
+}) {
+  const sections: Array<{ title: string; icon: ReactNode; tools: Array<{ name: string; desc: string }> }> = [];
+
+  if (enabledSearchProviders.length > 0) {
+    sections.push({
+      title: '网络搜索',
+      icon: <MagnifyingGlass size={16} />,
+      tools: enabledSearchProviders.map((p) => ({
+        name: 'search_web',
+        desc: `搜索网络信息（${p}）`,
+      })),
+    });
+  }
+
+  const enabledMCPs = mcpServers.filter((s) => enabledMCPServerIds.includes(s.id));
+  for (const server of enabledMCPs) {
+    const tools = (server.discoveredTools || []).filter((t) => t.enabled !== false);
+    if (tools.length > 0) {
+      sections.push({
+        title: `MCP · ${server.name}`,
+        icon: <Plugs size={16} />,
+        tools: tools.map((t) => ({ name: `mcp__${server.name}__${t.name}`, desc: t.description || '无描述' })),
+      });
+    }
+  }
+
+  sections.push({
+    title: '本地工具',
+    icon: <Code size={16} />,
+    tools: [
+      { name: 'get_time', desc: '获取当前时间' },
+      { name: 'get_date', desc: '获取当前日期' },
+    ],
+  });
+
+  if (sections.length === 0) {
+    return <p className="settings-field__hint" style={{ marginTop: 8 }}>暂无可用工具</p>;
+  }
+
+  return (
+    <div style={{ marginTop: 8 }}>
+      {sections.map((section) => (
+        <details key={section.title} style={{ marginBottom: 8 }}>
+          <summary style={{ cursor: 'pointer', fontWeight: 500, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+            {section.icon}
+            {section.title}（{section.tools.length}）
+          </summary>
+          <div style={{ marginTop: 4, paddingLeft: 4 }}>
+            {section.tools.map((tool) => (
+              <div key={tool.name} style={{ padding: '6px 8px', borderBottom: '1px solid var(--app-border)', fontSize: 12 }}>
+                <div style={{ fontWeight: 600, fontFamily: 'monospace', fontSize: 11 }}>{tool.name}</div>
+                <div style={{ color: 'var(--app-text-secondary)', fontSize: 11, marginTop: 2 }}>{tool.desc}</div>
+              </div>
+            ))}
+          </div>
+        </details>
+      ))}
     </div>
   );
 }

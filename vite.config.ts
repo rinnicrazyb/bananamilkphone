@@ -53,7 +53,9 @@ export default defineConfig({
                 let data = '';
                 proxyRes.on('data', (chunk: Buffer) => { data += chunk.toString(); });
                 proxyRes.on('end', () => {
-                  res.writeHead(proxyRes.statusCode ?? 502, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+                  // 透传原始 Content-Type，让 SDK 正确识别 JSON vs SSE
+                  const ct = proxyRes.headers['content-type'] || 'application/json';
+                  res.writeHead(proxyRes.statusCode ?? 502, { 'Content-Type': ct as string, 'Access-Control-Allow-Origin': '*' });
                   res.end(data);
                 });
               }
@@ -137,36 +139,17 @@ export default defineConfig({
                 proxyRes.on('data', (chunk: Buffer) => chunks.push(chunk));
                 proxyRes.on('end', () => {
                   const responseBody = Buffer.concat(chunks);
-                  const ct = (proxyRes.headers['content-type'] || '').toLowerCase();
-
-                  // JSON/文本响应 → 直接透传（不包信封），供 MCP SDK 直接读取
-                  if (ct.includes('json') || ct.includes('text') || ct.includes('xml')) {
-                    const responseHeaders = {
-                      'Access-Control-Allow-Origin': '*',
-                      'Access-Control-Allow-Methods': '*',
-                      'Access-Control-Allow-Headers': '*',
-                    };
-                    // 透传原始响应头（排除 CORS 相关）
-                    for (const [k, v] of Object.entries(proxyRes.headers)) {
-                      if (!['access-control-allow-origin', 'access-control-allow-methods', 'access-control-allow-headers'].includes(k)) {
-                        (responseHeaders as any)[k] = Array.isArray(v) ? v[0] : v;
-                      }
-                    }
-                    res.writeHead(proxyRes.statusCode ?? 200, responseHeaders);
-                    res.end(responseBody);
-                  } else {
-                    // 二进制响应 → 包 JSON 信封（base64）
-                    res.setHeader('Content-Type', 'application/json');
-                    res.setHeader('Access-Control-Allow-Origin', '*');
-                    res.writeHead(200);
-                    res.end(JSON.stringify({
-                      status: proxyRes.statusCode,
-                      statusText: proxyRes.statusMessage,
-                      headers: proxyRes.headers,
-                      body: responseBody.toString('base64'),
-                      bodyText: responseBody.length < 1024 * 100 ? responseBody.toString('utf-8') : undefined,
-                    }));
-                  }
+                  // 统一返回 JSON 信封，WebDAV 客户端 request() 期望此格式
+                  res.setHeader('Content-Type', 'application/json');
+                  res.setHeader('Access-Control-Allow-Origin', '*');
+                  res.writeHead(200);
+                  res.end(JSON.stringify({
+                    status: proxyRes.statusCode,
+                    statusText: proxyRes.statusMessage,
+                    headers: proxyRes.headers,
+                    body: responseBody.toString('base64'),
+                    bodyText: responseBody.length < 1024 * 100 ? responseBody.toString('utf-8') : undefined,
+                  }));
                 });
               }
             );
