@@ -105,7 +105,7 @@ async function executeToolCall(
     }
   }
 
-  // MCP 工具
+  // MCP 工具（使用 @modelcontextprotocol/sdk）
   if (name.startsWith('mcp__')) {
     const parts = name.split('__');
     const serverName = parts[1];
@@ -114,53 +114,26 @@ async function executeToolCall(
     if (!server) return `错误：未找到 MCP 服务器 "${serverName}"`;
 
     try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      for (const [k, v] of Object.entries(server.headers)) {
-        if (k.trim()) headers[k.trim()] = v;
-      }
-      const body = JSON.stringify({
-        jsonrpc: '2.0',
-        id: Date.now(),
-        method: 'tools/call',
-        params: { name: toolName, arguments: args },
-      });
-      // Vite CORS 代理：开发模式下所有 MCP 请求经 Node.js 转发，绕过浏览器 CORS
-      const needProxy = typeof window !== 'undefined' && window.location.hostname === 'localhost';
-      let res: Response;
-      if (needProxy) {
-        res = await fetch('/mcp-proxy', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ target: server.url, headers, body }),
-        });
-      } else {
-        res = await fetch(server.url, { method: 'POST', headers, body });
-      }
-      if (!res.ok) {
-        let detail = `HTTP ${res.status}`;
-        try {
-          const errBody = await res.json();
-          if (errBody?.error) detail = errBody.error;
-          else if (errBody?.message) detail = errBody.message;
-        } catch { /* ignore */ }
-        throw new Error(detail);
-      }
-      const data = await res.json();
-      if (data.error) {
-        throw new Error(typeof data.error === 'string' ? data.error : (data.error.message || 'MCP 响应错误'));
+      // 连接服务器（SDK 自动处理 initialize 握手）
+      const { connectToServer, callToolOnServer } = await import('../services/mcp-client/index');
+      const status = await connectToServer(server);
+      if (!status.connected) {
+        return `MCP 连接失败: ${status.error || '未知错误'}`;
       }
 
-      const result = data.result;
+      // 调用工具
+      const result = await callToolOnServer(server.id, toolName, args as Record<string, unknown>);
+
       if (result.isError) {
         const texts = (result.content || [])
-          .filter((c: any) => c.type === 'text')
-          .map((c: any) => c.text);
+          .filter((c) => c.type === 'text')
+          .map((c) => c.text || '');
         return `工具执行错误: ${texts.join('\n')}`;
       }
 
       const texts = (result.content || [])
-        .filter((c: any) => c.type === 'text')
-        .map((c: any) => c.text);
+        .filter((c) => c.type === 'text')
+        .map((c) => c.text || '');
       return texts.join('\n') || '工具已执行，无返回内容';
     } catch (err) {
       return `MCP 工具调用失败: ${(err as Error).message}`;
