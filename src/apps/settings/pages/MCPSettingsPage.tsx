@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { Plugs, Plus, CaretLeft, ArrowsClockwise, PencilSimple, Trash, CheckCircle, XCircle, Warning } from '@phosphor-icons/react';
 import { useSettingsStore } from '../../../store/settings-store';
+import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { MCPServer, MCPDiscoveredTool } from '../types';
 import MCPServerForm, { type MCPServerFormData } from '../components/MCPServerForm';
 
@@ -29,72 +30,30 @@ function StatusDot({ status }: { status: MCPServer['status'] }) {
   );
 }
 
-/* ───── 发送 JSON-RPC 请求到 MCP 服务器 ───── */
-async function mcpRequest(server: MCPServer, method: string, params?: unknown): Promise<any> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  for (const [k, v] of Object.entries(server.headers)) {
-    if (k.trim()) headers[k.trim()] = v;
-  }
-  const body = JSON.stringify({ jsonrpc: '2.0', id: Date.now(), method, params });
-
-  // Vite CORS 代理：开发模式下所有 MCP 请求经 Node.js 转发，绕过浏览器 CORS
-  const needProxy = typeof window !== 'undefined' && window.location.hostname === 'localhost';
-  let res: Response;
-  if (needProxy) {
-    res = await fetch('/mcp-proxy', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ target: server.url, headers, body }),
-    });
-  } else {
-    res = await fetch(server.url, { method: 'POST', headers, body });
-  }
-  if (!res.ok) {
-    // 尝试解析代理返回的详细错误信息
-    let detail = `HTTP ${res.status}`;
-    try {
-      const errBody = await res.json();
-      if (errBody?.error) detail = errBody.error;
-      else if (errBody?.message) detail = errBody.message;
-    } catch { /* 忽略解析失败，使用默认 HTTP 状态信息 */ }
-    throw new Error(detail);
-  }
-  const data = await res.json();
-  if (data.error) {
-    throw new Error(data.error.message || data.error || 'MCP 响应格式错误');
-  }
-  return data.result;
-}
-
-/* ───── MCP 连通性测试 ───── */
+/* ───── MCP 连通性测试（使用 @modelcontextprotocol/sdk） ───── */
 async function testMCPConnection(server: MCPServer): Promise<{ ok: boolean; error?: string; latency?: number }> {
   const start = Date.now();
   try {
-    const result = await mcpRequest(server, 'initialize', {
-      protocolVersion: '2025-11-25',
-      capabilities: {},
-      clientInfo: { name: 'bananamilkphone', version: '0.2.0' },
-    });
+    const { connectToServer } = await import('../../../services/mcp-client/index');
+    const status = await connectToServer(server);
     const latency = Date.now() - start;
-    if (result?.serverInfo?.name) return { ok: true, latency };
-    return { ok: false, error: 'MCP 初始化响应格式异常', latency };
+    if (status.connected) return { ok: true, latency };
+    return { ok: false, error: status.error || '连接失败', latency };
   } catch (err) {
     return { ok: false, error: (err as Error).message, latency: Date.now() - start };
   }
 }
 
-/* ───── 发现 MCP 工具（tools/list） ───── */
+/* ───── 发现 MCP 工具（SDK listTools） ───── */
 async function discoverMCPTools(server: MCPServer): Promise<MCPDiscoveredTool[]> {
   try {
-    // 先发 initialized 通知
-    await mcpRequest(server, 'notifications/initialized', undefined as any).catch(() => {});
-    // 再发 tools/list
-    const result = await mcpRequest(server, 'tools/list') as { tools?: Array<{ name: string; description?: string; inputSchema?: Record<string, unknown> }> };
-    if (!result?.tools) return [];
-    return result.tools.map((t) => ({
+    const { connectToServer, getDiscoveredTools } = await import('../../../services/mcp-client/index');
+    const status = await connectToServer(server);
+    if (!status.connected) return [];
+    return (getDiscoveredTools(server.id) || []).map((t: Tool) => ({
       name: t.name,
-      description: t.description || '',
-      inputSchema: t.inputSchema || {},
+      description: (t as any).description || '',
+      inputSchema: (t as any).inputSchema || {},
       enabled: true,
       needsApproval: false,
     }));
