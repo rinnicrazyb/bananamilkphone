@@ -12,7 +12,7 @@ const LONG_PRESS_MS = 400;
 const SWIPE_THRESHOLD_PX = 10;
 const EDGE_ZONE_PCT = 0.12; // 屏幕宽度 12%
 const EDGE_FIRST_MS = 350; // 首次翻页延迟
-const EDGE_REPEAT_MS = 200; // 连续翻页间隔
+// const EDGE_REPEAT_MS = 200; // 连续翻页（已禁用：每次入边只翻一页）
 const SWIPE_SNAP_PCT = 0.3; // 滑动超过 30% 切页
 const SWIPE_VELOCITY_THRESHOLD = 0.5; // 快速滑动阈值 px/ms
 
@@ -337,16 +337,11 @@ export default function AppGrid() {
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
     const target = e.target as HTMLElement;
     const iconEl = target.closest('[data-slot-idx]');
-    if (!iconEl) return;
-
-    const slotIdx = parseInt(iconEl.getAttribute('data-slot-idx')!, 10);
-    const appId = slotIdx < desktopGrid.length ? desktopGrid[slotIdx] : null;
-    if (!appId) return;
 
     e.preventDefault();
 
-    // 同步写入 refs（立即生效，不等 render）
-    phaseRef.current = 'pressing';
+    // 同步写入 refs
+    phaseRef.current = iconEl ? 'pressing' : 'swiping';
     pressStartXRef.current = e.clientX;
     pressStartYRef.current = e.clientY;
     swipeStartXRef.current = e.clientX;
@@ -356,29 +351,40 @@ export default function AppGrid() {
     lastMoveTimeRef.current = Date.now();
     lastMoveXRef.current = e.clientX;
 
-    // 异步 dispatch（触发 React 渲染）
-    dispatch({
-      type: 'PRESS_START',
-      x: e.clientX,
-      y: e.clientY,
-      pointerId: e.pointerId,
-      page: displayPage,
-      totalPages: trimmedTotalPages,
-    });
+    if (iconEl) {
+      const slotIdx = parseInt(iconEl.getAttribute('data-slot-idx')!, 10);
+      const appId = slotIdx < desktopGrid.length ? desktopGrid[slotIdx] : null;
+      if (!appId) { phaseRef.current = 'idle'; return; }
 
-    longPressTimer.current = setTimeout(() => {
-      phaseRef.current = 'dragging';
       sourceIdxRef.current = slotIdx;
-      draggedAppIdRef.current = appId;
-      lastCollisionIdxRef.current = slotIdx;
-      gridRef.current?.setPointerCapture(e.pointerId);
-      dispatch({ type: 'ENTER_DRAG', sourceIdx: slotIdx, appId });
-      ghostPos.current = { x: e.clientX, y: e.clientY - 30 };
-      if (ghostRef.current) {
-        ghostRef.current.style.display = 'block';
-        ghostRef.current.style.transform = `translate(${ghostPos.current.x}px, ${ghostPos.current.y}px)`;
-      }
-    }, LONG_PRESS_MS);
+
+      dispatch({
+        type: 'PRESS_START', x: e.clientX, y: e.clientY,
+        pointerId: e.pointerId, page: displayPage, totalPages: trimmedTotalPages,
+      });
+
+      longPressTimer.current = setTimeout(() => {
+        phaseRef.current = 'dragging';
+        draggedAppIdRef.current = appId;
+        lastCollisionIdxRef.current = slotIdx;
+        gridRef.current?.setPointerCapture(e.pointerId);
+        dispatch({ type: 'ENTER_DRAG', sourceIdx: slotIdx, appId });
+
+        // ghost 定位在原图标上方
+        const iconRect = iconEl.getBoundingClientRect();
+        ghostPos.current = {
+          x: iconRect.left + iconRect.width / 2 - 36,
+          y: iconRect.top - 20,
+        };
+        if (ghostRef.current) {
+          ghostRef.current.style.display = 'block';
+          ghostRef.current.style.transform = `translate(${ghostPos.current.x}px, ${ghostPos.current.y}px)`;
+        }
+      }, LONG_PRESS_MS);
+    } else {
+      // 按下空白区域 → 直接进入滑动模式
+      dispatch({ type: 'ENTER_SWIPE' });
+    }
   }, [desktopGrid, displayPage, trimmedTotalPages]);
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
@@ -388,9 +394,11 @@ export default function AppGrid() {
     if (phase === 'pressing') {
       const dx = e.clientX - pressStartXRef.current;
       const dy = e.clientY - pressStartYRef.current;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist > SWIPE_THRESHOLD_PX) {
-        // 清除长按定时器，进入滑动
+      const absDx = Math.abs(dx);
+      const absDy = Math.abs(dy);
+      // 只有水平滑动超过阈值 且 水平位移 > 2倍垂直位移，才进入 swiping
+      // 避免上下轻微偏移导致误退出拖拽等待
+      if (absDx > SWIPE_THRESHOLD_PX && absDx > absDy * 2) {
         if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
         phaseRef.current = 'swiping';
         swipeStartXRef.current = e.clientX;
@@ -400,7 +408,6 @@ export default function AppGrid() {
         dispatch({ type: 'ENTER_SWIPE' });
         dispatch({ type: 'SWIPE_MOVE', offset: swipeOffsetRef.current });
       }
-      // PRESS_MOVE 仍然 dispatch 以保持 reducer 同步（用于 press 内距离判定）
       dispatch({ type: 'PRESS_MOVE', x: e.clientX, y: e.clientY });
       return;
     }
@@ -414,7 +421,7 @@ export default function AppGrid() {
     }
 
     if (phase === 'dragging') {
-      ghostPos.current = { x: e.clientX, y: e.clientY - 30 };
+      ghostPos.current = { x: e.clientX - 36, y: e.clientY - 60 };
       if (ghostRef.current) {
         ghostRef.current.style.transform = `translate(${ghostPos.current.x}px, ${ghostPos.current.y}px)`;
       }
@@ -443,7 +450,7 @@ export default function AppGrid() {
           }
         }
       }
-      // 边缘翻页
+      // 边缘翻页（每次进入边缘只翻一次，不连续翻页）
       const sw = window.innerWidth;
       const edgeW = sw * EDGE_ZONE_PCT;
       const atRight = e.clientX > sw - edgeW;
@@ -451,7 +458,6 @@ export default function AppGrid() {
       if (!atRight && !atLeft) {
         isInEdge.current = false;
         if (edgeTimer.current) { clearTimeout(edgeTimer.current); edgeTimer.current = null; }
-        if (edgeInterval.current) { clearInterval(edgeInterval.current); edgeInterval.current = null; }
       } else if (!isInEdge.current) {
         isInEdge.current = true;
         edgeTimer.current = setTimeout(() => {
@@ -462,15 +468,6 @@ export default function AppGrid() {
             : Math.max(0, Math.min(trimmedTotalPages - 1, pg + dir));
           currentPageRef.current = newPage;
           dispatch({ type: 'DRAG_MOVE', page: newPage, totalPages: Math.max(trimmedTotalPages, newPage + 1), collisionIdx: null });
-          edgeInterval.current = setInterval(() => {
-            const d = atRight ? 1 : -1;
-            const cp = currentPageRef.current;
-            const np = d === 1 && cp >= trimmedTotalPages
-              ? cp + 1
-              : Math.max(0, Math.min(trimmedTotalPages - 1, cp + d));
-            currentPageRef.current = np;
-            dispatch({ type: 'DRAG_MOVE', page: np, totalPages: Math.max(trimmedTotalPages, np + 1), collisionIdx: null });
-          }, EDGE_REPEAT_MS);
         }, EDGE_FIRST_MS);
       }
     }
@@ -493,12 +490,16 @@ export default function AppGrid() {
         if (offset > 0 && currentPageRef.current > 0) newPage = currentPageRef.current - 1;
         else if (offset < 0 && currentPageRef.current < trimmedTotalPages - 1) newPage = currentPageRef.current + 1;
       }
+      // 确保不超出修剪后的页数
+      newPage = Math.min(newPage, Math.max(0, trimmedTotalPages - 1));
       snapPage.current = newPage;
       currentPageRef.current = newPage;
       dispatch({ type: 'DROP', page: newPage });
     } else if (phase === 'dragging') {
       if (ghostRef.current) ghostRef.current.style.display = 'none';
-      dispatch({ type: 'DROP', page: currentPageRef.current });
+      const clampedPage = Math.min(currentPageRef.current, Math.max(0, trimmedTotalPages - 1));
+      currentPageRef.current = clampedPage;
+      dispatch({ type: 'DROP', page: clampedPage });
     } else if (phase === 'pressing') {
       const dx = e.clientX - pressStartXRef.current;
       const dy = e.clientY - pressStartYRef.current;
