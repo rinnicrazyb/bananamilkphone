@@ -1155,3 +1155,98 @@ cd android
 2. **主动消息功能** — 事件监听 → APP 内弹窗 + 手机通知栏推送
 3. **记忆游廊 APP** — 用户说"非常重要后续再做"
 4. 抓取 JSON 空内容 / LLM 空回复兜底文案
+
+---
+
+## 2026-07-21（续）：桌面主屏幕完全推倒重写
+
+### 背景
+用户反馈旧桌面（@dnd-kit + CSS translateX）bug 越来越多——翻页后 ghost 断触、坐标计算混乱、touchcancel 频发。决定完全推倒重来，模拟真实安卓手机桌面交互。
+
+### grill-me 访谈确认的设计决策（16 条）
+
+| # | 决策 | 结论 |
+|---|------|------|
+| 1 | 技术栈 | 手写 Pointer Events 状态机，放弃 @dnd-kit |
+| 2 | 状态管理 | `useReducer`（大事：拖拽阶段/翻页/槽位）+ `useRef`（小事：ghost 坐标 + 同步 phase 读写） |
+| 3 | 数据模型 | `desktopOrder: string[]`（`''` 空位）→ `desktopGrid: (string\|null)[]`（`null` 空位） |
+| 4 | 触发 | 长按 400ms → 图标 ghost 1.15× + 旋转 -2° |
+| 5 | 碰撞 | 拖拽中实时碰撞 + 挤走 + 就近推空位（BFS 曼哈顿距离） |
+| 6 | 翻页 | 边缘 12% 区域触发，350ms 首翻，每次入边只翻一页（不连续） |
+| 7 | 建新页 | 右边缘末尾自动建，空页自动修剪 |
+| 8 | Ghost | 原图标上方定位 + 手指偏移 -36/-60px + drop-shadow |
+| 9 | 滑动切页 | 跟手滑动（速度+距离判断），松手 CSS transition 弹回 |
+| 10 | 滑动 vs 拖拽 | 水平位移 > 10px 且 > 2×垂直位移才进入滑动；纯纵向不误触 |
+| 11 | 短按 | pointerup 时手动 `navigate(app.route)`（因 preventDefault 吃掉 click） |
+| 12 | Dock 栏 | 先不加 |
+| 13 | 小组件 | 后续扩 `desktopGrid` 槽位类型即可 |
+
+### 改动文件
+
+| 文件 | 改动 |
+|------|------|
+| `src/store/app-store.ts` | ✏️ `desktopOrder` → `desktopGrid: (string\|null)[]` |
+| `src/services/persistence/index.ts` | ✏️ 接口/函数参数全部同步 |
+| `src/services/persistence/use-persistence.ts` | ✏️ 5 处引用同步 |
+| `src/apps/launcher/components/AppGrid.tsx` | 🆕 **完全重写**（~600 行） |
+| `src/index.css` | ✏️ 移除 dnd-kit 旧样式，新增 grid slot/ghost/source 样式 |
+
+### 核心踩坑记录（重要！下个 agent 必读）
+
+**坑 1：React dispatch 异步 → 事件处理器读到旧 state**
+- 现象：长按不触发、滑动不启动
+- 根因：`handlePointerDown` dispatch `PRESS_START` → 紧接着 `handlePointerMove` 读到 `drag.phase` 仍是旧值 `'idle'` → 直接 return
+- 修复：新增 `phaseRef` / `swipeStartXRef` / `currentPageRef` 等 refs，事件处理器中**同步读写 refs**，dispatch 仅用于触发渲染
+
+**坑 2：track CSS transform 走 React state → 滑动不跟手**
+- 现象：空白区域滑动 track 不移动
+- 根因：`trackTransform` 依赖 `drag.phase`（React state），第一次 pointermove 时 state 未更新
+- 修复：滑动时 `handlePointerMove` **直接操作 `trackRef.current.style.transform`**（同 ghost 做法），绕过 React 渲染管道
+
+**坑 3：空格子也有 `data-slot-idx` → 空白区域滑动失效**
+- 现象：按在空格子上左右滑不动
+- 根因：空格子 `<div data-slot-idx="...">` 也命中 `closest('[data-slot-idx]')` → 进入图标分支 → `!appId` → return
+- 修复：先判断 `appId` 有效性，空格子 fall through 到滑动分支
+
+**坑 4：pointer capture 缺失 → 滑动中手指移出 grid 后丢事件**
+- 修复：`handlePointerDown` 始终 `setPointerCapture`
+
+### 架构要点
+
+```
+事件层（Pointer Events）
+  ├── handlePointerDown → 同步写 refs + setPointerCapture
+  ├── handlePointerMove → 读 phaseRef（同步），操作 ghost DOM / track DOM（直接）
+  └── handlePointerUp → 判断切页/放置，CSS transition 动画
+
+状态层（useReducer + Refs）
+  ├── drag.*（React state）→ 驱动非高频渲染（页面圆点、虚线框）
+  └── *Ref（同步 mutable）→ 事件处理器中判断分支
+
+渲染层
+  ├── track DOM → 滑动时 ref 直控，其他时 useEffect 从 state 同步
+  ├── ghost DOM → 拖拽时 ref 直控
+  └── grid slots → React state 驱动（desktopGrid 变化时重渲染）
+```
+
+### 当前 APP 状态总览（2026-07-21 桌面重写后）
+
+| APP | 状态 | 说明 |
+|-----|------|------|
+| **桌面主屏幕** | ✅ **重写完成** | Pointer Events 状态机，跟手滑动+长按拖拽+实时碰撞挤走+边缘翻页建页 |
+| 聊天 APP | ✅ | 8 项功能盒 + 记忆提取 + Transformer Pipeline + HTML 渲染 |
+| 世界书 APP | ✅ | 数据层+注入逻辑+UI+绑定+持久化+书封裁剪+导入导出 |
+| 设置 APP | ✅ | API 配置 + WebDAV + 备份恢复 + MCP 双通道（JS + Kotlin SDK） |
+| 主题 APP | ✅ | 壁纸+字体+自定义 APP 图标+预设管理 |
+| 记忆游廊 APP | ⬜ | 未开始（用户说"非常重要后续再做"） |
+| 其余 APP | ⬜ | 占位目录（Phase 3） |
+
+### Git 分支
+- 当前分支：`desktop-redesign`（6 commits 领先 main）
+- main 分支保留旧桌面不动
+
+### 下一步入口（按优先级）
+1. **APK 打包测试** — 验证真机触控体验
+2. **主动消息功能** — 事件监听 → APP 内弹窗 + 手机通知栏推送
+3. **记忆游廊 APP** — 仿 Nocturne Memory
+4. 合并 `desktop-redesign` → `main`
