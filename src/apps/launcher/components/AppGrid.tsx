@@ -245,6 +245,7 @@ export default function AppGrid() {
 
   // ── Refs ──
   const gridRef = useRef<HTMLDivElement>(null);
+  const trackRef = useRef<HTMLDivElement>(null);
   const ghostRef = useRef<HTMLDivElement>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const edgeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -339,9 +340,9 @@ export default function AppGrid() {
     const iconEl = target.closest('[data-slot-idx]');
 
     e.preventDefault();
+    gridRef.current?.setPointerCapture(e.pointerId);
 
     // 同步写入 refs
-    phaseRef.current = iconEl ? 'pressing' : 'swiping';
     pressStartXRef.current = e.clientX;
     pressStartYRef.current = e.clientY;
     swipeStartXRef.current = e.clientX;
@@ -352,10 +353,12 @@ export default function AppGrid() {
     lastMoveXRef.current = e.clientX;
 
     if (iconEl) {
+      // 按下图标 → 进入 pressing
       const slotIdx = parseInt(iconEl.getAttribute('data-slot-idx')!, 10);
       const appId = slotIdx < desktopGrid.length ? desktopGrid[slotIdx] : null;
       if (!appId) { phaseRef.current = 'idle'; return; }
 
+      phaseRef.current = 'pressing';
       sourceIdxRef.current = slotIdx;
 
       dispatch({
@@ -367,10 +370,8 @@ export default function AppGrid() {
         phaseRef.current = 'dragging';
         draggedAppIdRef.current = appId;
         lastCollisionIdxRef.current = slotIdx;
-        gridRef.current?.setPointerCapture(e.pointerId);
         dispatch({ type: 'ENTER_DRAG', sourceIdx: slotIdx, appId });
 
-        // ghost 定位在原图标上方
         const iconRect = iconEl.getBoundingClientRect();
         ghostPos.current = {
           x: iconRect.left + iconRect.width / 2 - 36,
@@ -382,8 +383,10 @@ export default function AppGrid() {
         }
       }, LONG_PRESS_MS);
     } else {
-      // 按下空白区域 → 直接进入滑动模式
-      dispatch({ type: 'ENTER_SWIPE' });
+      // 按下空白区域 → 直接进入滑动，用 DOM 直控 track
+      phaseRef.current = 'swiping';
+      // 关掉 track 的 CSS transition 以跟手
+      if (trackRef.current) trackRef.current.style.transition = 'none';
     }
   }, [desktopGrid, displayPage, trimmedTotalPages]);
 
@@ -405,8 +408,8 @@ export default function AppGrid() {
         swipeOffsetRef.current = e.clientX - swipeStartXRef.current;
         lastMoveTimeRef.current = Date.now();
         lastMoveXRef.current = e.clientX;
+        if (trackRef.current) trackRef.current.style.transition = 'none';
         dispatch({ type: 'ENTER_SWIPE' });
-        dispatch({ type: 'SWIPE_MOVE', offset: swipeOffsetRef.current });
       }
       dispatch({ type: 'PRESS_MOVE', x: e.clientX, y: e.clientY });
       return;
@@ -416,7 +419,10 @@ export default function AppGrid() {
       swipeOffsetRef.current = e.clientX - swipeStartXRef.current;
       lastMoveTimeRef.current = Date.now();
       lastMoveXRef.current = e.clientX;
-      dispatch({ type: 'SWIPE_MOVE', offset: swipeOffsetRef.current });
+      // 直接操作 track DOM（不经过 React，保证跟手）
+      if (trackRef.current) {
+        trackRef.current.style.transform = `translateX(calc(${-currentPageRef.current * 100}% + ${swipeOffsetRef.current}px))`;
+      }
       return;
     }
 
@@ -490,10 +496,14 @@ export default function AppGrid() {
         if (offset > 0 && currentPageRef.current > 0) newPage = currentPageRef.current - 1;
         else if (offset < 0 && currentPageRef.current < trimmedTotalPages - 1) newPage = currentPageRef.current + 1;
       }
-      // 确保不超出修剪后的页数
       newPage = Math.min(newPage, Math.max(0, trimmedTotalPages - 1));
       snapPage.current = newPage;
       currentPageRef.current = newPage;
+      // 恢复 CSS transition 做弹回/切页动画，然后同步 React state
+      if (trackRef.current) {
+        trackRef.current.style.transition = 'transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+        trackRef.current.style.transform = `translateX(${-newPage * 100}%)`;
+      }
       dispatch({ type: 'DROP', page: newPage });
     } else if (phase === 'dragging') {
       if (ghostRef.current) ghostRef.current.style.display = 'none';
@@ -537,15 +547,20 @@ export default function AppGrid() {
 
   // ── 计算 track translateX ──
   const trackTransform = useMemo(() => {
-    if (drag.phase === 'swiping') {
-      return `translateX(calc(${-drag.currentPage * 100}% + ${drag.swipeOffset}px))`;
-    }
     return `translateX(${-displayPage * 100}%)`;
-  }, [drag.phase, drag.currentPage, drag.swipeOffset, displayPage]);
+  }, [displayPage]);
 
   const trackTransition = drag.phase === 'swiping' || drag.phase === 'dragging'
     ? 'none'
     : 'transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+
+  // 非滑动阶段同步 track 位置（滑动时 handlePointerMove 直接操作 DOM）
+  useEffect(() => {
+    if (phaseRef.current !== 'swiping' && trackRef.current) {
+      trackRef.current.style.transition = trackTransition;
+      trackRef.current.style.transform = trackTransform;
+    }
+  }, [trackTransform, trackTransition]);
 
   // ── Render ──
   return (
@@ -561,11 +576,8 @@ export default function AppGrid() {
     >
       {/* 页面轨道 */}
       <div
+        ref={trackRef}
         className="app-grid__track"
-        style={{
-          transform: trackTransform,
-          transition: trackTransition,
-        }}
       >
         {pages.map((page, pageIdx) => (
           <div key={pageIdx} className="app-grid__page">
