@@ -29,9 +29,9 @@ export function usePersistence() {
         useLorebookStore.getState().setLorebooks(persisted.lorebooks);
       }
 
-      // restore desktop order
-      if (persisted.desktopOrder?.length) {
-        useAppStore.setState({ desktopOrder: persisted.desktopOrder });
+      // restore desktop grid
+      if (persisted.desktopGrid?.length) {
+        useAppStore.setState({ desktopGrid: persisted.desktopGrid });
       }
     }).catch((err) => {
       console.warn('[usePersistence] Load failed:', err);
@@ -43,7 +43,7 @@ export function usePersistence() {
       (state: any) => {
         const lorebookState = useLorebookStore.getState();
         const appState = useAppStore.getState();
-        saveDataDebounced(state.agents, state.conversations, state.messages, state.memories, lorebookState.lorebooks, appState.desktopOrder);
+        saveDataDebounced(state.agents, state.conversations, state.messages, state.memories, lorebookState.lorebooks, appState.desktopGrid);
       }
     );
 
@@ -52,7 +52,7 @@ export function usePersistence() {
       (state) => {
         const chatState = useChatStore.getState();
         const appState = useAppStore.getState();
-        saveDataDebounced(chatState.agents, chatState.conversations, chatState.messages, chatState.memories, state.lorebooks, appState.desktopOrder);
+        saveDataDebounced(chatState.agents, chatState.conversations, chatState.messages, chatState.memories, state.lorebooks, appState.desktopGrid);
       }
     );
 
@@ -61,7 +61,7 @@ export function usePersistence() {
       (state) => {
         const chatState = useChatStore.getState();
         const lorebookState = useLorebookStore.getState();
-        saveDataDebounced(chatState.agents, chatState.conversations, chatState.messages, chatState.memories, lorebookState.lorebooks, state.desktopOrder);
+        saveDataDebounced(chatState.agents, chatState.conversations, chatState.messages, chatState.memories, lorebookState.lorebooks, state.desktopGrid);
       }
     );
 
@@ -70,7 +70,7 @@ export function usePersistence() {
       const state = useChatStore.getState();
       const lorebookState = useLorebookStore.getState();
       const appState = useAppStore.getState();
-      saveDataImmediately(state.agents, state.conversations, state.messages, state.memories, lorebookState.lorebooks, appState.desktopOrder);
+      saveDataImmediately(state.agents, state.conversations, state.messages, state.memories, lorebookState.lorebooks, appState.desktopGrid);
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
 

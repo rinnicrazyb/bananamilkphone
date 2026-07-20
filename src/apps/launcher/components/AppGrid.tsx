@@ -1,415 +1,649 @@
-import { useCallback, useMemo, useRef, useState, useEffect } from 'react';
-import {
-  DndContext,
-  useDraggable,
-  DragOverlay,
-  PointerSensor,
-  TouchSensor,
-  useSensor,
-  useSensors,
-  type DragStartEvent,
-  type DragMoveEvent,
-  type DragEndEvent,
-} from '@dnd-kit/core';
+import { useCallback, useMemo, useRef, useReducer, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../../../store/app-store';
 import AppIcon from './AppIcon';
+import type { AppMeta } from '../../../types';
 
-const GRID_COLS = 4;
-const GRID_ROWS = 6;
-const PAGE_SIZE = GRID_COLS * GRID_ROWS;
-const SWIPE_THRESHOLD = 60;
-const EDGE_AUTO_SCROLL_MS = 400;
-const EDGE_ZONE = 40;
-const COLLISION_THROTTLE_MS = 40;
+// ── 常量 ──
+const COLS = 4;
+const ROWS = 6;
+const PAGE_SIZE = COLS * ROWS;
+const LONG_PRESS_MS = 400;
+const SWIPE_THRESHOLD_PX = 10;
+const EDGE_ZONE_PCT = 0.12; // 屏幕宽度 12%
+const EDGE_FIRST_MS = 350; // 首次翻页延迟
+const EDGE_REPEAT_MS = 200; // 连续翻页间隔
+const SWIPE_SNAP_PCT = 0.3; // 滑动超过 30% 切页
+const SWIPE_VELOCITY_THRESHOLD = 0.5; // 快速滑动阈值 px/ms
 
-/** 单个网格单元：有图标时可拖拽，无图标时空占位 */
-function DraggableCell({
-  app,
-  globalIdx,
-  isDragOverlay,
-}: {
-  app: ReturnType<typeof useAppStore.getState>['apps'][number] | null;
-  globalIdx: number;
-  isDragOverlay?: boolean;
-}) {
-  const { setNodeRef, listeners, attributes, isDragging } = useDraggable({
-    id: app?.id ?? `cell-${globalIdx}`,
-    disabled: !app,
-  });
+// ── 拖拽状态机 ──
+type DragPhase = 'idle' | 'pressing' | 'swiping' | 'dragging';
 
-  if (!app) {
-    return <div className="app-icon app-icon--empty" />;
+interface DragState {
+  phase: DragPhase;
+  currentPage: number;
+  totalPages: number;
+  sourceIdx: number | null;      // 初始槽位（渲染虚线框用，不变）
+  draggedAppId: string | null;   // 被拖拽的 APP id
+  pointerStartX: number;
+  pointerStartY: number;
+  pointerId: number;
+  swipeStartX: number;
+  swipeOffset: number;
+  lastCollisionIdx: number | null;
+  lastMoveTime: number;
+  lastMoveX: number;
+}
+
+const INITIAL_DRAG: DragState = {
+  phase: 'idle',
+  currentPage: 0,
+  totalPages: 0,
+  sourceIdx: null,
+  draggedAppId: null,
+  pointerStartX: 0,
+  pointerStartY: 0,
+  pointerId: -1,
+  swipeStartX: 0,
+  swipeOffset: 0,
+  lastCollisionIdx: null,
+  lastMoveTime: 0,
+  lastMoveX: 0,
+};
+
+type DragAction =
+  | { type: 'PRESS_START'; x: number; y: number; pointerId: number; page: number; totalPages: number }
+  | { type: 'PRESS_MOVE'; x: number; y: number }
+  | { type: 'ENTER_DRAG'; sourceIdx: number; appId: string }
+  | { type: 'ENTER_SWIPE' }
+  | { type: 'DRAG_MOVE'; page: number; totalPages: number; collisionIdx: number | null }
+  | { type: 'SWIPE_MOVE'; offset: number }
+  | { type: 'DROP'; page: number }
+  | { type: 'CANCEL' };
+
+function dragReducer(state: DragState, action: DragAction): DragState {
+  switch (action.type) {
+    case 'PRESS_START':
+      return {
+        ...INITIAL_DRAG,
+        phase: 'pressing',
+        pointerStartX: action.x,
+        pointerStartY: action.y,
+        pointerId: action.pointerId,
+        currentPage: action.page,
+        totalPages: action.totalPages,
+        swipeStartX: action.x,
+        lastMoveTime: Date.now(),
+        lastMoveX: action.x,
+      };
+
+    case 'PRESS_MOVE': {
+      if (state.phase !== 'pressing') return state;
+      const dx = action.x - state.pointerStartX;
+      const dy = action.y - state.pointerStartY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist > SWIPE_THRESHOLD_PX) {
+        return {
+          ...state,
+          phase: 'swiping',
+          swipeStartX: action.x,
+          swipeOffset: action.x - state.swipeStartX,
+        };
+      }
+      return state;
+    }
+
+    case 'ENTER_DRAG':
+      return {
+        ...state,
+        phase: 'dragging',
+        sourceIdx: action.sourceIdx,
+        draggedAppId: action.appId,
+        lastCollisionIdx: action.sourceIdx,
+      };
+
+    case 'ENTER_SWIPE':
+      return { ...state, phase: 'swiping' };
+
+    case 'DRAG_MOVE':
+      return {
+        ...state,
+        currentPage: action.page,
+        totalPages: action.totalPages,
+        lastCollisionIdx: action.collisionIdx,
+      };
+
+    case 'SWIPE_MOVE':
+      return {
+        ...state,
+        swipeOffset: action.offset,
+        lastMoveTime: Date.now(),
+        lastMoveX: action.offset + state.swipeStartX,
+      };
+
+    case 'DROP':
+      return {
+        ...state,
+        phase: 'idle',
+        currentPage: action.page,
+        sourceIdx: null,
+        draggedAppId: null,
+        lastCollisionIdx: null,
+        swipeOffset: 0,
+      };
+
+    case 'CANCEL':
+      return { ...INITIAL_DRAG, totalPages: state.totalPages };
+
+    default:
+      return state;
+  }
+}
+
+// ── 辅助函数 ──
+
+/** 屏幕坐标 → 全局槽位索引 */
+function pointToSlot(
+  x: number,
+  y: number,
+  gridRect: DOMRect,
+  page: number
+): number | null {
+  const cellW = gridRect.width / COLS;
+  const cellH = gridRect.height / ROWS;
+  const col = Math.floor((x - gridRect.left) / cellW);
+  const row = Math.floor((y - gridRect.top) / cellH);
+  if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return null;
+  return page * PAGE_SIZE + row * COLS + col;
+}
+
+/** 找最近空位（BFS 曼哈顿距离），跨页搜索 */
+function findNearestEmpty(
+  grid: (string | null)[],
+  fromIdx: number,
+  totalSlots: number
+): number | null {
+  const totalPages = Math.ceil(totalSlots / PAGE_SIZE);
+  const fromPage = Math.floor(fromIdx / PAGE_SIZE);
+  const fromRow = Math.floor((fromIdx % PAGE_SIZE) / COLS);
+  const fromCol = fromIdx % COLS;
+
+  // 先检查同页
+  for (let dist = 1; dist <= COLS + ROWS; dist++) {
+    for (let dr = -dist; dr <= dist; dr++) {
+      const row = fromRow + dr;
+      if (row < 0 || row >= ROWS) continue;
+      const remaining = dist - Math.abs(dr);
+      for (const dc of remaining === 0 ? [0] : [-remaining, remaining]) {
+        const col = fromCol + dc;
+        if (col < 0 || col >= COLS) continue;
+        const idx = fromPage * PAGE_SIZE + row * COLS + col;
+        if (idx >= 0 && idx < totalSlots && grid[idx] === null) return idx;
+      }
+    }
   }
 
-  return (
-    <div
-      ref={isDragOverlay ? undefined : setNodeRef}
-      {...(isDragOverlay ? {} : listeners)}
-      {...(isDragOverlay ? {} : attributes)}
-      className={`app-icon ${isDragging ? 'app-icon--dragging' : ''}`}
-    >
-      <AppIcon app={app} />
-    </div>
-  );
+  // 跨页搜索
+  for (let p = 0; p < totalPages; p++) {
+    if (p === fromPage) continue;
+    for (let idx = p * PAGE_SIZE; idx < Math.min((p + 1) * PAGE_SIZE, totalSlots); idx++) {
+      if (grid[idx] === null) return idx;
+    }
+  }
+
+  return null;
 }
 
-/** 手指位置 → 网格索引（基于 grid 容器视口坐标，不受 track translateX 影响） */
-function calcGlobalIdx(
-  cx: number,
-  cy: number,
-  gridEl: HTMLElement,
-  currentPage: number
-): number {
-  const rect = gridEl.getBoundingClientRect();
-  const cellW = rect.width / GRID_COLS;
-  const cellH = rect.height / GRID_ROWS;
-  const col = Math.max(0, Math.min(GRID_COLS - 1, Math.floor((cx - rect.left) / cellW)));
-  const row = Math.max(0, Math.min(GRID_ROWS - 1, Math.floor((cy - rect.top) / cellH)));
-  return currentPage * PAGE_SIZE + row * GRID_COLS + col;
+/** 执行「挤走」：source 移到 target，target 图标被推到最近空位 */
+function pushIcon(
+  grid: (string | null)[],
+  sourceIdx: number,
+  targetIdx: number,
+  totalSlots: number
+): (string | null)[] {
+  if (sourceIdx === targetIdx) return grid;
+  const next = [...grid];
+  const displaced = next[targetIdx];
+  next[targetIdx] = next[sourceIdx];
+  next[sourceIdx] = null;
+
+  if (displaced !== null) {
+    const empty = findNearestEmpty(next, targetIdx, totalSlots);
+    if (empty !== null) {
+      next[empty] = displaced;
+    } else {
+      // 没有空位了，追加到末尾（建新页）
+      next.push(displaced);
+      // 补齐到整页
+      while (next.length % PAGE_SIZE !== 0) next.push(null);
+    }
+  }
+
+  return next;
 }
+
+// ── 组件 ──
 
 export default function AppGrid() {
+  const navigate = useNavigate();
   const apps = useAppStore((s) => s.apps);
-  const desktopOrder = useAppStore((s) => s.desktopOrder);
+  const desktopGrid = useAppStore((s) => s.desktopGrid);
   const customIcons = useAppStore((s) => s.customIcons);
 
-  // --- page & swipe state ---
-  const [currentPage, setCurrentPage] = useState(0);
-  const [isSwiping, setIsSwiping] = useState(false);
-  const [swipeOffset, setSwipeOffset] = useState(0);
+  // ── 分页计算 ──
+  const totalSlots = useMemo(() => {
+    const raw = desktopGrid.length;
+    // 至少显示所有已注册 APP（包括那些不在 grid 中的）
+    const appCount = apps.length;
+    return Math.max(raw, Math.ceil(appCount / PAGE_SIZE) * PAGE_SIZE, PAGE_SIZE);
+  }, [desktopGrid.length, apps.length]);
 
-  // dnd-kit overlay state
-  const [activeId, setActiveId] = useState<string | null>(null);
-
-  // refs
-  const gridRef = useRef<HTMLDivElement>(null);
-  const trackRef = useRef<HTMLDivElement>(null);
-  const touchRef = useRef({ startX: 0, startY: 0, isSwiping: false });
-  const edgeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const hasTriggeredEdgeRef = useRef(false);
-  const lastCollisionUpdate = useRef(0);
-  const lastValidGlobalIdxRef = useRef<number | null>(null);
-  const dragStartPosRef = useRef({ x: 0, y: 0 });
-  const dndActiveRef = useRef(false);
-
-  // --- pages computed from sparse desktopOrder ---
-  const totalSlots = useMemo(
-    () => Math.max(PAGE_SIZE * 3, desktopOrder.length),
-    [desktopOrder.length]
-  );
   const totalPages = useMemo(() => Math.ceil(totalSlots / PAGE_SIZE), [totalSlots]);
-  const clampedPage = Math.min(currentPage, Math.max(0, totalPages - 1));
-  const visiblePages = Math.max(1, totalPages);
 
+  // ── 拖拽状态 ──
+  const [drag, dispatch] = useReducer(dragReducer, { ...INITIAL_DRAG, totalPages });
+
+  // ── Refs ──
+  const gridRef = useRef<HTMLDivElement>(null);
+  const ghostRef = useRef<HTMLDivElement>(null);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const edgeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const edgeInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+  const ghostPos = useRef({ x: 0, y: 0 });
+  const isInEdge = useRef(false);
+  const snapPage = useRef(0);
+  const lastCollisionTime = useRef(0);
+
+  // ── 同步缺少的 APP 到 grid ──
+  useEffect(() => {
+    const missing = apps.filter((a) => !desktopGrid.includes(a.id));
+    if (missing.length > 0) {
+      useAppStore.setState((prev) => {
+        const next = [...prev.desktopGrid];
+        for (const m of missing) {
+          const emptyIdx = next.indexOf(null);
+          if (emptyIdx !== -1) {
+            next[emptyIdx] = m.id;
+          } else {
+            next.push(m.id);
+          }
+        }
+        return { desktopGrid: next };
+      });
+    }
+  }, [apps, desktopGrid]);
+
+  // ── 修剪尾部空页 ──
+  const trimmedTotalPages = useMemo(() => {
+    const effective = [...desktopGrid];
+    // 找到最后一个非 null 的位置
+    let lastNonEmpty = -1;
+    for (let i = effective.length - 1; i >= 0; i--) {
+      if (effective[i] !== null) {
+        lastNonEmpty = i;
+        break;
+      }
+    }
+    if (lastNonEmpty < 0) return 1;
+    return Math.max(1, Math.floor(lastNonEmpty / PAGE_SIZE) + 1);
+  }, [desktopGrid]);
+
+  // ── 构建页面数据 ──
   const pages = useMemo(() => {
-    const count = visiblePages;
-    const result: (typeof apps[number] | null)[][] = [];
-    for (let p = 0; p < count; p++) {
-      const page: (typeof apps[number] | null)[] = [];
+    const result: ((AppMeta | null)[])[] = [];
+    for (let p = 0; p < trimmedTotalPages; p++) {
+      const page: (AppMeta | null)[] = [];
       for (let c = 0; c < PAGE_SIZE; c++) {
         const globalIdx = p * PAGE_SIZE + c;
-        const appId = globalIdx < desktopOrder.length ? desktopOrder[globalIdx] : '';
+        const appId = globalIdx < desktopGrid.length ? desktopGrid[globalIdx] : null;
         const app = appId ? apps.find((a) => a.id === appId) ?? null : null;
         page.push(app);
       }
       result.push(page);
     }
-    // Trim trailing empty pages (keep min 1)
-    while (result.length > 1 && result[result.length - 1].every((a) => a === null)) {
-      result.pop();
-    }
     return result;
-  }, [desktopOrder, apps, visiblePages]);
+  }, [desktopGrid, apps, trimmedTotalPages]);
 
-  const renderPages = pages.length;
+  const displayPage = Math.min(drag.currentPage, Math.max(0, trimmedTotalPages - 1));
 
-  // --- side effects ---
-  useEffect(() => {
-    const el = gridRef.current;
-    if (!el) return;
-    el.style.touchAction = activeId ? 'none' : 'pan-y';
-  }, [activeId]);
+  const sourceApp = drag.draggedAppId
+    ? apps.find((a) => a.id === drag.draggedAppId) ?? null
+    : null;
 
-  useEffect(() => {
-    if (currentPage >= renderPages) {
-      setCurrentPage(Math.max(0, renderPages - 1));
-    }
-  }, [renderPages, currentPage]);
-
-  // Sync: add any apps missing from desktopOrder into empty slots
-  useEffect(() => {
-    const missing = apps.filter((a) => !desktopOrder.includes(a.id));
-    if (missing.length > 0) {
-      useAppStore.setState((prev) => {
-        const next = [...prev.desktopOrder];
-        for (const m of missing) {
-          const emptyIdx = next.indexOf('');
-          if (emptyIdx !== -1) next[emptyIdx] = m.id;
-          else next.push(m.id);
-        }
-        return { desktopOrder: next };
-      });
-    }
-  }, [apps, desktopOrder]);
-
-  // --- dnd-kit sensors (long-press for touch, click-drag for mouse) ---
-  const sensors = useSensors(
-    useSensor(TouchSensor, {
-      activationConstraint: { delay: 500, tolerance: 10 },
-    }),
-    useSensor(PointerSensor, {
-      activationConstraint: { distance: 8 },
-    })
-  );
-
-  // --- helpers ---
-  const clearEdgeTimer = useCallback(() => {
-    if (edgeTimer.current) {
-      clearTimeout(edgeTimer.current);
-      edgeTimer.current = null;
-    }
+  // ── 清理定时器 ──
+  const clearTimers = useCallback(() => {
+    if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
+    if (edgeTimer.current) { clearTimeout(edgeTimer.current); edgeTimer.current = null; }
+    if (edgeInterval.current) { clearInterval(edgeInterval.current); edgeInterval.current = null; }
   }, []);
 
-  // --- dnd-kit callbacks ---
-  const handleDragStart = useCallback(
-    (event: DragStartEvent) => {
-      const id = String(event.active.id);
-      setActiveId(id);
-      dndActiveRef.current = true;
-      // 记录起始位置（用于 onDragMove 计算 delta）
-      const ev = event.active.rect.current?.initial;
-      if (ev) {
-        dragStartPosRef.current = { x: ev.left, y: ev.top };
+  // ── 翻页 ──
+  const flipPage = useCallback((dir: 1 | -1) => {
+    dispatch({
+      type: 'DRAG_MOVE',
+      page: Math.max(0, Math.min(trimmedTotalPages, drag.currentPage + dir)),
+      totalPages: trimmedTotalPages,
+      collisionIdx: null,
+    });
+  }, [trimmedTotalPages, drag.currentPage]);
+
+  // ── 边缘翻页逻辑 ──
+  const checkEdge = useCallback((fingerX: number, screenW: number) => {
+    const edgeW = screenW * EDGE_ZONE_PCT;
+    const atRight = fingerX > screenW - edgeW;
+    const atLeft = fingerX < edgeW;
+
+    if (!atRight && !atLeft) {
+      isInEdge.current = false;
+      if (edgeTimer.current) { clearTimeout(edgeTimer.current); edgeTimer.current = null; }
+      if (edgeInterval.current) { clearInterval(edgeInterval.current); edgeInterval.current = null; }
+      return;
+    }
+
+    if (isInEdge.current) return;
+    isInEdge.current = true;
+
+    edgeTimer.current = setTimeout(() => {
+      const dir = atRight ? 1 : -1;
+      // 右边缘末尾建新页
+      if (dir === 1 && drag.currentPage >= trimmedTotalPages - 1) {
+        // 自动建页（通过扩充 trimmedTotalPages）
+        const newPage = drag.currentPage + 1;
+        dispatch({ type: 'DRAG_MOVE', page: newPage, totalPages: Math.max(trimmedTotalPages, newPage + 1), collisionIdx: null });
+      } else {
+        flipPage(dir);
       }
-    },
-    []
-  );
 
-  const handleDragMove = useCallback(
-    (event: DragMoveEvent) => {
-      const grid = gridRef.current;
-      if (!grid) return;
-      const id = String(event.active.id);
-      const { delta } = event;
-
-      // 根据起始位置 + delta 计算当前手指坐标
-      const cx = dragStartPosRef.current.x + delta.x;
-      const cy = dragStartPosRef.current.y + delta.y;
-
-      // 碰撞检测（节流）
-      const now = Date.now();
-      if (now - lastCollisionUpdate.current > COLLISION_THROTTLE_MS) {
-        lastCollisionUpdate.current = now;
-        const gi = calcGlobalIdx(cx, cy, grid, clampedPage);
-        if (gi !== -1) {
-          lastValidGlobalIdxRef.current = gi;
-          // 执行交换
-          useAppStore.setState((prev) => {
-            const oldIdx = prev.desktopOrder.indexOf(id);
-            if (oldIdx === -1 || oldIdx === gi) return {};
-            const next = [...prev.desktopOrder];
-            while (next.length <= gi) next.push('');
-            next[oldIdx] = next[gi];
-            next[gi] = id;
-            return { desktopOrder: next };
+      // 连续翻页
+      edgeInterval.current = setInterval(() => {
+        const d = atRight ? 1 : -1;
+        if (d === 1 && drag.currentPage >= trimmedTotalPages) {
+          // 需要建新页
+          dispatch({
+            type: 'DRAG_MOVE',
+            page: drag.currentPage + 1,
+            totalPages: Math.max(trimmedTotalPages, drag.currentPage + 2),
+            collisionIdx: null,
           });
+        } else {
+          flipPage(d);
+        }
+      }, EDGE_REPEAT_MS);
+    }, EDGE_FIRST_MS);
+  }, [flipPage, trimmedTotalPages, drag.currentPage]);
+
+  // ── 碰撞检测 ──
+  const checkCollision = useCallback((fingerX: number, fingerY: number) => {
+    // 节流：40ms 一次
+    const now = Date.now();
+    if (now - lastCollisionTime.current < 40) return;
+    lastCollisionTime.current = now;
+
+    const grid = gridRef.current;
+    if (!grid || !drag.draggedAppId) return;
+    const rect = grid.getBoundingClientRect();
+    const targetIdx = pointToSlot(fingerX, fingerY, rect, drag.currentPage);
+    if (targetIdx === null || targetIdx === drag.lastCollisionIdx) return;
+
+    // 找被拖拽图标在 grid 中的当前实际位置
+    const currentSourceIdx = desktopGrid.indexOf(drag.draggedAppId);
+    if (currentSourceIdx === -1 || currentSourceIdx === targetIdx) return;
+
+    // 更新碰撞状态
+    dispatch({ type: 'DRAG_MOVE', page: drag.currentPage, totalPages: trimmedTotalPages, collisionIdx: targetIdx });
+
+    // 执行挤走
+    useAppStore.setState((prev) => {
+      const gridArr = [...prev.desktopGrid];
+      while (gridArr.length <= Math.max(targetIdx, currentSourceIdx)) gridArr.push(null);
+      const newGrid = pushIcon(gridArr, currentSourceIdx, targetIdx, gridArr.length);
+      return { desktopGrid: newGrid };
+    });
+  }, [drag.draggedAppId, drag.currentPage, drag.lastCollisionIdx, desktopGrid, trimmedTotalPages]);
+
+  // ── Pointer Events ──
+  const handlePointerDown = useCallback((e: React.PointerEvent) => {
+    // 只在图标上触发
+    const target = e.target as HTMLElement;
+    const iconEl = target.closest('[data-slot-idx]');
+    if (!iconEl) return;
+
+    const slotIdx = parseInt(iconEl.getAttribute('data-slot-idx')!, 10);
+    const appId = slotIdx < desktopGrid.length ? desktopGrid[slotIdx] : null;
+    if (!appId) return; // 空位不触发
+
+    e.preventDefault();
+
+    dispatch({
+      type: 'PRESS_START',
+      x: e.clientX,
+      y: e.clientY,
+      pointerId: e.pointerId,
+      page: displayPage,
+      totalPages: trimmedTotalPages,
+    });
+
+    // 长按定时器
+    longPressTimer.current = setTimeout(() => {
+      // 进入拖拽时才捕获指针
+      gridRef.current?.setPointerCapture(e.pointerId);
+      dispatch({ type: 'ENTER_DRAG', sourceIdx: slotIdx, appId: appId });
+      // 初始化 ghost 位置
+      ghostPos.current = { x: e.clientX, y: e.clientY - 30 };
+      if (ghostRef.current) {
+        ghostRef.current.style.display = 'block';
+        ghostRef.current.style.transform = `translate(${ghostPos.current.x}px, ${ghostPos.current.y}px)`;
+      }
+    }, LONG_PRESS_MS);
+  }, [desktopGrid, displayPage, trimmedTotalPages]);
+
+  const handlePointerMove = useCallback((e: React.PointerEvent) => {
+    if (drag.phase === 'idle') return;
+
+    if (drag.phase === 'pressing') {
+      dispatch({ type: 'PRESS_MOVE', x: e.clientX, y: e.clientY });
+      return;
+    }
+
+    if (drag.phase === 'swiping') {
+      dispatch({ type: 'SWIPE_MOVE', offset: e.clientX - drag.swipeStartX });
+      return;
+    }
+
+    if (drag.phase === 'dragging') {
+      // 更新 ghost 位置（直接操作 DOM）
+      ghostPos.current = { x: e.clientX, y: e.clientY - 30 };
+      if (ghostRef.current) {
+        ghostRef.current.style.transform = `translate(${ghostPos.current.x}px, ${ghostPos.current.y}px)`;
+      }
+
+      // 碰撞检测
+      checkCollision(e.clientX, e.clientY);
+
+      // 边缘翻页
+      checkEdge(e.clientX, window.innerWidth);
+    }
+  }, [drag.phase, drag.swipeStartX, checkCollision, checkEdge]);
+
+  const handlePointerUp = useCallback((e: React.PointerEvent) => {
+    clearTimers();
+    isInEdge.current = false;
+
+    if (drag.phase === 'swiping') {
+      // 判断是否切页
+      const offset = drag.swipeOffset;
+      const velocity = (offset - (drag.lastMoveX - drag.swipeStartX)) / Math.max(1, Date.now() - drag.lastMoveTime);
+      const absOffset = Math.abs(offset);
+      const absVelocity = Math.abs(velocity);
+
+      let newPage = drag.currentPage;
+      if (absOffset > window.innerWidth * SWIPE_SNAP_PCT || absVelocity > SWIPE_VELOCITY_THRESHOLD) {
+        if (offset > 0 && drag.currentPage > 0) {
+          newPage = drag.currentPage - 1;
+        } else if (offset < 0 && drag.currentPage < trimmedTotalPages - 1) {
+          newPage = drag.currentPage + 1;
         }
       }
 
-      // 边缘检测 + 自动翻页
-      const sw = window.innerWidth;
-      const isLastPage = clampedPage >= renderPages - 1;
-      const atRight = cx > sw - EDGE_ZONE;
-      const atLeft = cx < EDGE_ZONE;
-
-      if (atRight && isLastPage && !edgeTimer.current && !hasTriggeredEdgeRef.current) {
-        edgeTimer.current = setTimeout(() => {
-          setCurrentPage((p) => Math.min(renderPages - 1, p + 1));
-          hasTriggeredEdgeRef.current = true;
-          clearEdgeTimer();
-        }, EDGE_AUTO_SCROLL_MS);
-      } else if (atRight && !isLastPage && !edgeTimer.current && !hasTriggeredEdgeRef.current) {
-        edgeTimer.current = setTimeout(() => {
-          setCurrentPage((p) => Math.min(renderPages - 1, p + 1));
-          hasTriggeredEdgeRef.current = true;
-          clearEdgeTimer();
-        }, EDGE_AUTO_SCROLL_MS);
-      } else if (atLeft && clampedPage > 0 && !edgeTimer.current && !hasTriggeredEdgeRef.current) {
-        edgeTimer.current = setTimeout(() => {
-          setCurrentPage((p) => Math.max(0, p - 1));
-          hasTriggeredEdgeRef.current = true;
-          clearEdgeTimer();
-        }, EDGE_AUTO_SCROLL_MS);
-      } else if (!atRight && !atLeft) {
-        clearEdgeTimer();
-        hasTriggeredEdgeRef.current = false;
+      snapPage.current = newPage;
+      dispatch({ type: 'DROP', page: newPage });
+    } else if (drag.phase === 'dragging') {
+      // 隐藏 ghost
+      if (ghostRef.current) {
+        ghostRef.current.style.display = 'none';
       }
-    },
-    [clampedPage, renderPages, clearEdgeTimer]
-  );
-
-  const handleDragEnd = useCallback(
-    (event: DragEndEvent) => {
-      const id = String(event.active.id);
-      // 最终碰撞提交
-      const lastGi = lastValidGlobalIdxRef.current;
-      if (lastGi !== null) {
-        useAppStore.setState((prev) => {
-          const oldIdx = prev.desktopOrder.indexOf(id);
-          if (oldIdx === -1 || oldIdx === lastGi) return {};
-          const next = [...prev.desktopOrder];
-          while (next.length <= lastGi) next.push('');
-          next[oldIdx] = next[lastGi];
-          next[lastGi] = id;
-          return { desktopOrder: next };
-        });
-      }
-      // 清理
-      setActiveId(null);
-      dndActiveRef.current = false;
-      lastValidGlobalIdxRef.current = null;
-      lastCollisionUpdate.current = 0;
-      hasTriggeredEdgeRef.current = false;
-      clearEdgeTimer();
-    },
-    [clearEdgeTimer]
-  );
-
-  const handleDragCancel = useCallback(() => {
-    setActiveId(null);
-    dndActiveRef.current = false;
-    lastValidGlobalIdxRef.current = null;
-    lastCollisionUpdate.current = 0;
-    hasTriggeredEdgeRef.current = false;
-    clearEdgeTimer();
-  }, [clearEdgeTimer]);
-
-  // --- swipe touch handlers (synthetic, only for page swipe, not drag) ---
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    if (dndActiveRef.current) return;
-    const t = e.touches[0];
-    touchRef.current = { startX: t.clientX, startY: t.clientY, isSwiping: false };
-  }, []);
-
-  const handleTouchMove = useCallback((e: React.TouchEvent) => {
-    if (dndActiveRef.current) return;
-    const t = e.touches[0];
-    const state = touchRef.current;
-
-    if (!state.isSwiping) {
-      const dx = t.clientX - state.startX;
-      if (Math.abs(dx) > SWIPE_THRESHOLD) {
-        state.isSwiping = true;
-      }
-    }
-
-    if (state.isSwiping) {
-      setSwipeOffset(t.clientX - state.startX);
-      setIsSwiping(true);
-    }
-  }, []);
-
-  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
-    if (dndActiveRef.current) return;
-    const state = touchRef.current;
-
-    if (state.isSwiping) {
-      const dx = e.changedTouches[0].clientX - state.startX;
-      if (Math.abs(dx) > SWIPE_THRESHOLD) {
-        if (dx < 0 && clampedPage < renderPages - 1) {
-          setCurrentPage(clampedPage + 1);
-        } else if (dx > 0 && clampedPage > 0) {
-          setCurrentPage(clampedPage - 1);
+      dispatch({ type: 'DROP', page: drag.currentPage });
+    } else if (drag.phase === 'pressing') {
+      // 短按 — 打开 APP
+      clearTimers();
+      const dx = e.clientX - drag.pointerStartX;
+      const dy = e.clientY - drag.pointerStartY;
+      if (Math.sqrt(dx * dx + dy * dy) < SWIPE_THRESHOLD_PX) {
+        // 找到被按下的图标并导航
+        const slotEl = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement;
+        const iconEl = slotEl?.closest('[data-slot-idx]');
+        if (iconEl) {
+          const idx = parseInt(iconEl.getAttribute('data-slot-idx')!, 10);
+          const appId = idx < desktopGrid.length ? desktopGrid[idx] : null;
+          const app = appId ? apps.find((a) => a.id === appId) : null;
+          if (app) {
+            navigate(app.route);
+            dispatch({ type: 'CANCEL' });
+            return;
+          }
         }
       }
-      setIsSwiping(false);
-      setSwipeOffset(0);
+      dispatch({ type: 'CANCEL' });
     }
 
-    touchRef.current.isSwiping = false;
-  }, [clampedPage, renderPages]);
+    gridRef.current?.releasePointerCapture(e.pointerId);
+  }, [drag, clearTimers, trimmedTotalPages]);
 
-  const handleDotClick = useCallback((page: number) => {
-    setCurrentPage(page);
-  }, []);
+  const handlePointerCancel = useCallback(() => {
+    clearTimers();
+    isInEdge.current = false;
+    if (ghostRef.current) ghostRef.current.style.display = 'none';
+    dispatch({ type: 'CANCEL' });
+  }, [clearTimers]);
 
-  const translateX = isSwiping
-    ? `calc(${-clampedPage * 100}% + ${swipeOffset}px)`
-    : `${-clampedPage * 100}%`;
+  // ── 计算 track translateX ──
+  const trackTransform = useMemo(() => {
+    if (drag.phase === 'swiping') {
+      return `translateX(calc(${-drag.currentPage * 100}% + ${drag.swipeOffset}px))`;
+    }
+    return `translateX(${-displayPage * 100}%)`;
+  }, [drag.phase, drag.currentPage, drag.swipeOffset, displayPage]);
 
-  const activeApp = activeId ? apps.find((a) => a.id === activeId) ?? null : null;
-  const customIcon = activeId ? customIcons[activeId] : undefined;
+  const trackTransition = drag.phase === 'swiping' || drag.phase === 'dragging'
+    ? 'none'
+    : 'transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
 
-  // --- render ---
+  // ── Render ──
   return (
-    <DndContext
-      sensors={sensors}
-      onDragStart={handleDragStart}
-      onDragMove={handleDragMove}
-      onDragEnd={handleDragEnd}
-      onDragCancel={handleDragCancel}
+    <div
+      ref={gridRef}
+      className="app-grid"
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
+      onContextMenu={(e) => { if (drag.phase === 'dragging') e.preventDefault(); }}
+      style={{ touchAction: drag.phase === 'idle' ? 'pan-y' : 'none' }}
     >
+      {/* 页面轨道 */}
       <div
-        ref={gridRef}
-        className="app-grid"
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        onContextMenu={(e) => { if (activeId) e.preventDefault(); }}
+        className="app-grid__track"
+        style={{
+          transform: trackTransform,
+          transition: trackTransition,
+        }}
       >
-        <div
-          ref={trackRef}
-          className={`app-grid__track${isSwiping ? ' app-grid__track--swiping' : ''}`}
-          style={{ transform: `translateX(${translateX})`, transition: activeId ? 'none' : undefined }}
-        >
-          {pages.map((page, pageIdx) => (
-            <div key={pageIdx} className="app-grid__page">
-              {page.map((app, idx) => {
-                const globalIdx = pageIdx * PAGE_SIZE + idx;
+        {pages.map((page, pageIdx) => (
+          <div key={pageIdx} className="app-grid__page">
+            {page.map((app, colIdx) => {
+              const globalIdx = pageIdx * PAGE_SIZE + colIdx;
+              const isDragging = drag.phase === 'dragging';
+              const isSourceSlot = isDragging && drag.sourceIdx === globalIdx;
+
+              if (isSourceSlot) {
+                // 拖拽源头 — 显示虚线框占位
                 return (
-                  <DraggableCell
-                    key={app?.id ?? `empty-${globalIdx}`}
-                    app={app}
-                    globalIdx={globalIdx}
+                  <div
+                    key={`source-${globalIdx}`}
+                    className="app-grid__slot app-grid__slot--source"
+                    data-slot-idx={globalIdx}
+                  >
+                    <div className="app-grid__slot-ghost-placeholder" />
+                  </div>
+                );
+              }
+
+              if (!app) {
+                return (
+                  <div
+                    key={`empty-${globalIdx}`}
+                    className="app-grid__slot app-grid__slot--empty"
+                    data-slot-idx={globalIdx}
                   />
                 );
-              })}
-            </div>
-          ))}
-        </div>
+              }
 
-        {/* drag ghost — dnd-kit DragOverlay (portal,不在 grid DOM 树内) */}
-        <DragOverlay>
-          {activeApp ? (
-            <div className="app-icon app-icon--drag-ghost">
-              <div
-                className="app-icon__image"
-                style={
-                  customIcon
-                    ? { backgroundImage: `url(${customIcon})`, backgroundSize: 'cover', backgroundPosition: 'center' }
-                    : undefined
-                }
-              >
-                {!customIcon && activeApp.icon}
-              </div>
-              <span className="app-icon__label">{activeApp.name}</span>
-            </div>
-          ) : null}
-        </DragOverlay>
+              const appId = desktopGrid[globalIdx];
+              const customIcon = appId ? customIcons[appId] : undefined;
 
-        {renderPages > 1 && (
-          <div className="app-grid__dots">
-            {Array.from({ length: renderPages }, (_, i) => (
-              <button
-                key={i}
-                className={`app-grid__dot${i === clampedPage ? ' app-grid__dot--active' : ''}`}
-                onClick={() => handleDotClick(i)}
-                aria-label={`第 ${i + 1} 页`}
-              />
-            ))}
+              return (
+                <div
+                  key={appId ?? `icon-${globalIdx}`}
+                  className={`app-grid__slot${customIcon ? ' app-grid__slot--custom-icon' : ''}`}
+                  data-slot-idx={globalIdx}
+                >
+                  <div className="app-grid__icon-wrap">
+                    <AppIcon app={app} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+
+      {/* Ghost 浮层 */}
+      <div
+        ref={ghostRef}
+        className="app-grid__ghost"
+        style={{ display: 'none', position: 'fixed', left: 0, top: 0, zIndex: 1000, pointerEvents: 'none' }}
+      >
+        {sourceApp && (
+          <div className="app-grid__ghost-inner">
+            <div className="app-grid__ghost-icon">
+              {(customIcons[sourceApp.id]
+                ? <img src={customIcons[sourceApp.id]} alt={sourceApp.name} />
+                : sourceApp.icon
+              )}
+            </div>
+            <span className="app-grid__ghost-label">{sourceApp.name}</span>
           </div>
         )}
       </div>
-    </DndContext>
+
+      {/* 分页圆点 */}
+      {trimmedTotalPages > 1 && (
+        <div className="app-grid__dots">
+          {Array.from({ length: trimmedTotalPages }, (_, i) => (
+            <button
+              key={i}
+              className={`app-grid__dot${i === displayPage ? ' app-grid__dot--active' : ''}`}
+              onClick={() => {
+                if (drag.phase === 'idle') {
+                  snapPage.current = i;
+                  dispatch({ type: 'DROP', page: i });
+                }
+              }}
+              aria-label={`第 ${i + 1} 页`}
+            />
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

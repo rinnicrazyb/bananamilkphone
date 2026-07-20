@@ -22,7 +22,7 @@ interface PersistedData {
   messages: Record<string, Message[]>;
   memories: Record<string, Memory[]>;
   lorebooks: Lorebook[];
-  desktopOrder?: string[];
+  desktopGrid?: (string | null)[];
   settings?: Record<string, unknown>;
   timestamp: number;
 }
@@ -52,7 +52,7 @@ async function writeData(
   messages: Record<string, Message[]>,
   memories: Record<string, Memory[]>,
   lorebooks: Lorebook[] = [],
-  desktopOrder?: string[]
+  desktopGrid?: (string | null)[]
 ): Promise<void> {
   const data: PersistedData = {
     version: 4,
@@ -61,7 +61,7 @@ async function writeData(
     messages,
     memories,
     lorebooks,
-    desktopOrder,
+    desktopGrid,
     timestamp: Date.now(),
   };
 
@@ -75,13 +75,13 @@ export function saveDataDebounced(
   messages: Record<string, Message[]>,
   memories: Record<string, Memory[]>,
   lorebooks: Lorebook[] = [],
-  desktopOrder?: string[]
+  desktopGrid?: (string | null)[]
 ): void {
   if (debounceTimer) clearTimeout(debounceTimer);
 
   debounceTimer = setTimeout(async () => {
     try {
-      await writeData(agents, conversations, messages, memories, lorebooks, desktopOrder);
+      await writeData(agents, conversations, messages, memories, lorebooks, desktopGrid);
     } catch (e) {
       console.warn('[Persistence] Save failed:', e);
     }
@@ -97,7 +97,7 @@ export function saveDataImmediately(
   messages: Record<string, Message[]>,
   memories: Record<string, Memory[]>,
   lorebooks: Lorebook[] = [],
-  desktopOrder?: string[]
+  desktopGrid?: (string | null)[]
 ): void {
   if (debounceTimer) {
     clearTimeout(debounceTimer);
@@ -105,7 +105,7 @@ export function saveDataImmediately(
   }
 
   // 立即执行，不等待（fire-and-forget）
-  writeData(agents, conversations, messages, memories, lorebooks, desktopOrder).catch((e) => {
+  writeData(agents, conversations, messages, memories, lorebooks, desktopGrid).catch((e) => {
     console.warn('[Persistence] Immediate save failed:', e);
   });
 }

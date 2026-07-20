@@ -4,8 +4,8 @@ import type { AppMeta, IconPreset, ThemeConfig } from '../types';
 interface AppState {
   /** 已注册的 APP 列表 */
   apps: AppMeta[];
-  /** 桌面 APP 排序（app id 列表） */
-  desktopOrder: string[];
+  /** 桌面网格槽位（app id 或 null 空位），按 4×6 分页 */
+  desktopGrid: (string | null)[];
   /** 主题配置 */
   theme: ThemeConfig;
   /** 自定义 APP 图标（appId → dataUrl） */
@@ -17,7 +17,7 @@ interface AppState {
 
   // Actions
   registerApp: (app: AppMeta) => void;
-  setDesktopOrder: (order: string[]) => void;
+  setDesktopGrid: (grid: (string | null)[]) => void;
   updateTheme: (config: Partial<ThemeConfig>) => void;
   setCustomIcon: (appId: string, dataUrl: string | null) => void;
   setIconPresets: (presets: IconPreset[]) => void;
@@ -28,7 +28,7 @@ interface AppState {
 
 export const useAppStore = create<AppState>((set) => ({
   apps: [],
-  desktopOrder: [],
+  desktopGrid: [],
   theme: {
     mode: 'system',
     preset: 'banana-milk',
@@ -42,18 +42,18 @@ export const useAppStore = create<AppState>((set) => ({
   registerApp: (app) =>
     set((state) => {
       if (state.apps.some((a) => a.id === app.id)) return state;
-      const newOrder = [...state.desktopOrder];
+      const next = [...state.desktopGrid];
       // 找第一个空位填空，否则追加
-      const emptyIdx = newOrder.indexOf('');
+      const emptyIdx = next.indexOf(null);
       if (emptyIdx !== -1) {
-        newOrder[emptyIdx] = app.id;
+        next[emptyIdx] = app.id;
       } else {
-        newOrder.push(app.id);
+        next.push(app.id);
       }
-      return { apps: [...state.apps, app], desktopOrder: newOrder };
+      return { apps: [...state.apps, app], desktopGrid: next };
     }),
 
-  setDesktopOrder: (order) => set({ desktopOrder: order }),
+  setDesktopGrid: (grid) => set({ desktopGrid: grid }),
 
   updateTheme: (config) =>
     set((state) => ({
