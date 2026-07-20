@@ -352,42 +352,43 @@ export default function AppGrid() {
     lastMoveTimeRef.current = Date.now();
     lastMoveXRef.current = e.clientX;
 
+    // 判断是否按在有效图标上
     if (iconEl) {
-      // 按下图标 → 进入 pressing
       const slotIdx = parseInt(iconEl.getAttribute('data-slot-idx')!, 10);
       const appId = slotIdx < desktopGrid.length ? desktopGrid[slotIdx] : null;
-      if (!appId) { phaseRef.current = 'idle'; return; }
+      if (appId) {
+        // 按下有效图标 → 进入 pressing
+        phaseRef.current = 'pressing';
+        sourceIdxRef.current = slotIdx;
 
-      phaseRef.current = 'pressing';
-      sourceIdxRef.current = slotIdx;
+        dispatch({
+          type: 'PRESS_START', x: e.clientX, y: e.clientY,
+          pointerId: e.pointerId, page: displayPage, totalPages: trimmedTotalPages,
+        });
 
-      dispatch({
-        type: 'PRESS_START', x: e.clientX, y: e.clientY,
-        pointerId: e.pointerId, page: displayPage, totalPages: trimmedTotalPages,
-      });
+        longPressTimer.current = setTimeout(() => {
+          phaseRef.current = 'dragging';
+          draggedAppIdRef.current = appId;
+          lastCollisionIdxRef.current = slotIdx;
+          dispatch({ type: 'ENTER_DRAG', sourceIdx: slotIdx, appId });
 
-      longPressTimer.current = setTimeout(() => {
-        phaseRef.current = 'dragging';
-        draggedAppIdRef.current = appId;
-        lastCollisionIdxRef.current = slotIdx;
-        dispatch({ type: 'ENTER_DRAG', sourceIdx: slotIdx, appId });
-
-        const iconRect = iconEl.getBoundingClientRect();
-        ghostPos.current = {
-          x: iconRect.left + iconRect.width / 2 - 36,
-          y: iconRect.top - 20,
-        };
-        if (ghostRef.current) {
-          ghostRef.current.style.display = 'block';
-          ghostRef.current.style.transform = `translate(${ghostPos.current.x}px, ${ghostPos.current.y}px)`;
-        }
-      }, LONG_PRESS_MS);
-    } else {
-      // 按下空白区域 → 直接进入滑动，用 DOM 直控 track
-      phaseRef.current = 'swiping';
-      // 关掉 track 的 CSS transition 以跟手
-      if (trackRef.current) trackRef.current.style.transition = 'none';
+          const iconRect = iconEl.getBoundingClientRect();
+          ghostPos.current = {
+            x: iconRect.left + iconRect.width / 2 - 36,
+            y: iconRect.top - 20,
+          };
+          if (ghostRef.current) {
+            ghostRef.current.style.display = 'block';
+            ghostRef.current.style.transform = `translate(${ghostPos.current.x}px, ${ghostPos.current.y}px)`;
+          }
+        }, LONG_PRESS_MS);
+        return;
+      }
     }
+
+    // 按在空白区域或空格子 → 直接进入滑动
+    phaseRef.current = 'swiping';
+    if (trackRef.current) trackRef.current.style.transition = 'none';
   }, [desktopGrid, displayPage, trimmedTotalPages]);
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
