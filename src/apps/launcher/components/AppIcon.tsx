@@ -1,51 +1,37 @@
 import { useNavigate } from 'react-router-dom';
+import { useAppStore } from '../../../store/app-store';
 import type { AppMeta } from '../../../types';
 
 interface AppIconProps {
   app: AppMeta;
-  onDragStart: (id: string) => void;
-  onDrop: (id: string) => void;
+  className?: string;
 }
 
-export default function AppIcon({ app, onDragStart, onDrop }: AppIconProps) {
+export default function AppIcon({ app, className = '' }: AppIconProps) {
   const navigate = useNavigate();
+  const customIcon = useAppStore((s) => s.customIcons[app.id]);
 
-  const handleClick = () => {
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
     navigate(app.route);
-  };
-
-  const handleDragStart = (e: React.DragEvent) => {
-    e.dataTransfer.setData('text/plain', app.id);
-    e.dataTransfer.effectAllowed = 'move';
-    onDragStart(app.id);
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    const draggedId = e.dataTransfer.getData('text/plain');
-    if (draggedId !== app.id) {
-      onDrop(app.id);
-    }
   };
 
   return (
     <div
-      className="app-icon"
-      draggable
-      onDragStart={handleDragStart}
-      onDragOver={handleDragOver}
-      onDrop={handleDrop}
+      className={`app-icon ${className}`}
+      data-app-id={app.id}
       onClick={handleClick}
       role="button"
       tabIndex={0}
       title={app.name}
     >
-      <div className="app-icon__image">{app.icon}</div>
+      <div className="app-icon__image">
+        {customIcon ? (
+          <img src={customIcon} alt={app.name} className="app-icon__custom-img" />
+        ) : (
+          app.icon
+        )}
+      </div>
       <span className="app-icon__label">{app.name}</span>
     </div>
   );

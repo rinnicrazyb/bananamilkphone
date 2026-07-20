@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { useAppStore } from '../../store/app-store';
 import { useChatStore } from '../../apps/chat/store/chat-store';
 import { useLorebookStore } from '../../apps/lorebook/store/lorebook-store';
 import { loadData, saveDataDebounced, saveDataImmediately } from './index';
@@ -27,6 +28,11 @@ export function usePersistence() {
       if (persisted.lorebooks?.length) {
         useLorebookStore.getState().setLorebooks(persisted.lorebooks);
       }
+
+      // restore desktop order
+      if (persisted.desktopOrder?.length) {
+        useAppStore.setState({ desktopOrder: persisted.desktopOrder });
+      }
     }).catch((err) => {
       console.warn('[usePersistence] Load failed:', err);
     });
@@ -35,7 +41,9 @@ export function usePersistence() {
     const unsubChat = useChatStore.subscribe(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (state: any) => {
-        saveDataDebounced(state.agents, state.conversations, state.messages, state.memories, useLorebookStore.getState().lorebooks);
+        const lorebookState = useLorebookStore.getState();
+        const appState = useAppStore.getState();
+        saveDataDebounced(state.agents, state.conversations, state.messages, state.memories, lorebookState.lorebooks, appState.desktopOrder);
       }
     );
 
@@ -43,7 +51,17 @@ export function usePersistence() {
     const unsubLorebook = useLorebookStore.subscribe(
       (state) => {
         const chatState = useChatStore.getState();
-        saveDataDebounced(chatState.agents, chatState.conversations, chatState.messages, chatState.memories, state.lorebooks);
+        const appState = useAppStore.getState();
+        saveDataDebounced(chatState.agents, chatState.conversations, chatState.messages, chatState.memories, state.lorebooks, appState.desktopOrder);
+      }
+    );
+
+    // 订阅桌面排序变化
+    const unsubApp = useAppStore.subscribe(
+      (state) => {
+        const chatState = useChatStore.getState();
+        const lorebookState = useLorebookStore.getState();
+        saveDataDebounced(chatState.agents, chatState.conversations, chatState.messages, chatState.memories, lorebookState.lorebooks, state.desktopOrder);
       }
     );
 
@@ -51,13 +69,15 @@ export function usePersistence() {
     const handleBeforeUnload = () => {
       const state = useChatStore.getState();
       const lorebookState = useLorebookStore.getState();
-      saveDataImmediately(state.agents, state.conversations, state.messages, state.memories, lorebookState.lorebooks);
+      const appState = useAppStore.getState();
+      saveDataImmediately(state.agents, state.conversations, state.messages, state.memories, lorebookState.lorebooks, appState.desktopOrder);
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
 
     return () => {
       unsubChat();
       unsubLorebook();
+      unsubApp();
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, []);

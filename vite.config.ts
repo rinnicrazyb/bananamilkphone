@@ -14,8 +14,9 @@ export default defineConfig({
         server.middlewares.use('/mcp-proxy', (req, res) => {
           const setCORS = () => {
             res.setHeader('Access-Control-Allow-Origin', '*');
-            res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+            res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
             res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+            res.setHeader('Access-Control-Expose-Headers', 'mcp-session-id, mcp-protocol-version, content-type');
           };
 
           if (req.method === 'OPTIONS') { setCORS(); res.writeHead(204); res.end(); return; }
@@ -25,13 +26,13 @@ export default defineConfig({
           req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
           req.on('end', () => {
             setCORS();
-            let parsed: { target?: string; headers?: Record<string, string>; body?: string };
+            let parsed: { target?: string; method?: string; headers?: Record<string, string>; body?: string };
             try { parsed = JSON.parse(body); } catch {
               res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
               res.end(JSON.stringify({ error: 'Invalid JSON' })); return;
             }
 
-            const { target, headers, body: requestBody } = parsed;
+            const { target, headers, body: requestBody, method: proxyMethod } = parsed;
             if (!target) {
               res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
               res.end(JSON.stringify({ error: 'Missing target' })); return;
@@ -46,16 +47,21 @@ export default defineConfig({
             const transport = targetUrl.protocol === 'https:' ? https : http;
             const reqHeaders: Record<string, string> = { 'Content-Type': 'application/json', ...headers };
             const port = parseInt(targetUrl.port) || (targetUrl.protocol === 'https:' ? 443 : 80);
+            const reqMethod = proxyMethod || 'POST';
 
             const proxyReq = transport.request(
-              { hostname: targetUrl.hostname, port, path: targetUrl.pathname + targetUrl.search, method: 'POST', headers: reqHeaders, timeout: 30000 },
+              { hostname: targetUrl.hostname, port, path: targetUrl.pathname + targetUrl.search, method: reqMethod, headers: reqHeaders, timeout: 30000 },
               (proxyRes) => {
                 let data = '';
                 proxyRes.on('data', (chunk: Buffer) => { data += chunk.toString(); });
                 proxyRes.on('end', () => {
-                  // 透传原始 Content-Type，让 SDK 正确识别 JSON vs SSE
-                  const ct = proxyRes.headers['content-type'] || 'application/json';
-                  res.writeHead(proxyRes.statusCode ?? 502, { 'Content-Type': ct as string, 'Access-Control-Allow-Origin': '*' });
+                  // 透传所有响应头（mcp-session-id、content-type、mcp-protocol-version 等由 SDK 自行读取）
+                  const outHeaders: Record<string, string> = {};
+                  for (const [k, v] of Object.entries(proxyRes.headers)) {
+                    if (v !== undefined) outHeaders[k] = Array.isArray(v) ? v.join(', ') : v;
+                  }
+                  outHeaders['Access-Control-Allow-Origin'] = '*';
+                  res.writeHead(proxyRes.statusCode ?? 502, outHeaders);
                   res.end(data);
                 });
               }

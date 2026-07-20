@@ -65,10 +65,16 @@ class ThemeEngine {
         '--app-wallpaper-blur',
         `${this.currentConfig.wallpaperBlur}px`
       );
+    } else {
+      root.style.setProperty('--app-wallpaper', 'none');
+      root.style.setProperty('--app-wallpaper-opacity', '1');
+      root.style.setProperty('--app-wallpaper-blur', '0px');
     }
 
     if (this.currentConfig.fontFamily) {
       root.style.setProperty('--app-font-family', this.currentConfig.fontFamily);
+    } else {
+      root.style.removeProperty('--app-font-family');
     }
   }
 

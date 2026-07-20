@@ -24,6 +24,7 @@ import { useLorebookStore } from '../store/lorebook-store';
 import { useChatStore } from '../../chat/store/chat-store';
 import { createDefaultEntry } from '../types';
 import EntryEditorDialog from '../components/EntryEditorDialog';
+import ImageCrop from '../../../components/ImageCrop';
 import type { LorebookEntry } from '../types';
 
 type PageType = 'cover' | 'toc' | 'entry';
@@ -50,6 +51,7 @@ export default function LorebookDetailPage() {
   const [editingEntry, setEditingEntry] = useState<LorebookEntry | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [editInfo, setEditInfo] = useState<{ name: string; description: string } | null>(null);
+  const [cropSrc, setCropSrc] = useState<string | null>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
 
   // 触摸翻页
@@ -127,16 +129,25 @@ export default function LorebookDetailPage() {
     navigate('/lorebook');
   };
 
-  // 上传书封
+  // 上传书封 → 先进入裁剪
   const handleCoverUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
-      const dataUrl = ev.target?.result as string;
-      updateLorebook(book.id, { cover: dataUrl });
+      setCropSrc(ev.target?.result as string);
     };
     reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const handleCropConfirm = (croppedDataUrl: string) => {
+    updateLorebook(book.id, { cover: croppedDataUrl });
+    setCropSrc(null);
+  };
+
+  const handleCropCancel = () => {
+    setCropSrc(null);
   };
 
   // 查找绑定了这本世界书的智能体
@@ -397,6 +408,18 @@ export default function LorebookDetailPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* 裁剪书封 */}
+      {cropSrc && (
+        <ImageCrop
+          src={cropSrc}
+          shape="rect"
+          aspectRatio={3 / 4}
+          outputWidth={300}
+          onCrop={handleCropConfirm}
+          onCancel={handleCropCancel}
+        />
       )}
     </div>
   );

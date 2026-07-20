@@ -1,17 +1,12 @@
 import { useState } from 'react';
 import { DownloadSimple, CaretLeft, CheckCircle, XCircle } from '@phosphor-icons/react';
-import { Capacitor } from '@capacitor/core';
 import { Directory, Filesystem } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
+import { isNative } from '../../../utils/platform';
 import { createBackup } from '../../../services/backup/index';
 
 interface Props {
   onBack: () => void;
-}
-
-/** 是否为 Capacitor 原生环境 */
-function isNative(): boolean {
-  try { return Capacitor.getPlatform() !== 'web'; } catch { return false; }
 }
 
 /** Blob → base64（FileReader 读取，自动分块） */

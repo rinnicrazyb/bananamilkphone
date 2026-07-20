@@ -8,16 +8,11 @@
  * - 点击通知跳转到对应智能体对话
  */
 
-import { Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
+import { isNative } from '../../utils/platform';
 
 const CHANNEL_ID = 'chat-message';
 const CHANNEL_NAME = '聊天消息';
-
-/** 是否为 Capacitor 原生环境 */
-function isNative(): boolean {
-  try { return Capacitor.getPlatform() !== 'web'; } catch { return false; }
-}
 
 /** 初始化通知渠道 */
 export async function initNotifications(): Promise<void> {

@@ -1,10 +1,10 @@
 import { useState, useRef } from 'react';
 import type { ReactNode } from 'react';
-import { CaretLeft, UploadSimple, Trash, Wrench, MagnifyingGlass, Plugs, Code } from '@phosphor-icons/react';
+import { CaretLeft, UploadSimple, Trash, MagnifyingGlass, Plugs, Code, Clock } from '@phosphor-icons/react';
 import { useChatStore } from '../store/chat-store';
 import { useSettingsStore } from '../../../store/settings-store';
 import { DEFAULT_DISPLAY_CONFIG } from '../types';
-import AvatarCrop from '../components/AvatarCrop';
+import ImageCrop from '../../../components/ImageCrop';
 
 interface ChatSettingsPageProps {
   onBack: () => void;
@@ -21,28 +21,6 @@ export default function ChatSettingsPage({ onBack }: ChatSettingsPageProps) {
   const conv = conversations.find((c) => c.id === activeConversationId);
   const agent = agents.find((a) => a.id === conv?.agentId);
   const cfg = agent?.displayConfig ?? DEFAULT_DISPLAY_CONFIG;
-
-  // 收集当前对话中的工具调用记录
-  const rawMessages = useChatStore((s) =>
-    activeConversationId ? s.messages[activeConversationId] : undefined
-  ) ?? [];
-  const toolCallEntries = (() => {
-    const entries: Array<{ name: string; args: string; result: string }> = [];
-    for (let i = 0; i < rawMessages.length; i++) {
-      const msg = rawMessages[i];
-      if (msg.role === 'assistant' && msg.toolCalls) {
-        for (const tc of msg.toolCalls) {
-          const resultMsg = rawMessages.find((m) => m.role === 'tool' && m.toolCallId === tc.id);
-          entries.push({
-            name: tc.function.name,
-            args: tc.function.arguments,
-            result: resultMsg?.content || '（等待执行结果）',
-          });
-        }
-      }
-    }
-    return entries;
-  })();
 
   const [cropSrc, setCropSrc] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -88,7 +66,7 @@ export default function ChatSettingsPage({ onBack }: ChatSettingsPageProps) {
         </label>
 
         <label className="settings-field settings-field--row">
-          <span>自动折叠思考链</span>
+          <span>自动折叠思考链和工具链</span>
           <input
             type="checkbox"
             checked={thinkingCollapsed}
@@ -96,30 +74,10 @@ export default function ChatSettingsPage({ onBack }: ChatSettingsPageProps) {
           />
         </label>
         <p className="settings-field__hint">
-          开启后思考链默认收起，可手动展开
+          开启后思考链和工具链默认收起，可手动展开
         </p>
-        <div className="settings-field">
-          <span>Tool Call 工具调用记录</span>
-          <div className="settings-field__hint" style={{ marginTop: 4 }}>
-            {toolCallEntries.length === 0
-              ? '当前对话暂无工具调用'
-              : toolCallEntries.map((entry, i) => (
-                  <div key={i} style={{ padding: '6px 0', borderBottom: '1px solid var(--app-border)', fontSize: 13 }}>
-                    <div style={{ fontWeight: 600, fontFamily: 'monospace', fontSize: 12 }}>
-                      <Wrench size={14} /> {entry.name}
-                    </div>
-                    <div style={{ color: 'var(--app-text-secondary)', fontSize: 11, marginTop: 2 }}>
-                      参数: {entry.args}
-                    </div>
-                    <div style={{ fontSize: 11, marginTop: 2, maxHeight: 40, overflow: 'hidden', color: '#27ae60' }}>
-                      {entry.result}
-                    </div>
-                  </div>
-                ))}
-          </div>
-        </div>
 
-        {/* 可用工具列表 */}
+        {/* 可用工具列表 — context-block 风格 */}
         <ToolListDisplay
           enabledSearchProviders={cfg.enabledSearchProviders ?? []}
           enabledMCPServerIds={cfg.enabledMCPServerIds ?? []}
@@ -128,8 +86,9 @@ export default function ChatSettingsPage({ onBack }: ChatSettingsPageProps) {
       </div>
 
       {cropSrc && (
-        <AvatarCrop
+        <ImageCrop
           src={cropSrc}
+          shape="circle"
           onCrop={handleCropConfirm}
           onCancel={() => setCropSrc(null)}
         />
@@ -138,18 +97,21 @@ export default function ChatSettingsPage({ onBack }: ChatSettingsPageProps) {
   );
 }
 
-/** 可用工具列表 — 按分类展示只读工具 */
+/** 可用工具列表 — context-block 风格：外层大折叠 → 内部按来源分组嵌套 */
 function ToolListDisplay({ enabledSearchProviders, enabledMCPServerIds, mcpServers }: {
   enabledSearchProviders: string[];
   enabledMCPServerIds: string[];
   mcpServers: Array<{ id: string; name: string; discoveredTools?: Array<{ name: string; description: string; enabled?: boolean }> }>;
 }) {
-  const sections: Array<{ title: string; icon: ReactNode; tools: Array<{ name: string; desc: string }> }> = [];
+  const enabledMCPs = mcpServers.filter((s) => enabledMCPServerIds.includes(s.id));
+
+  // 构建内部区块数据
+  const groups: Array<{ title: string; icon: ReactNode; tools: Array<{ name: string; desc: string }> }> = [];
 
   if (enabledSearchProviders.length > 0) {
-    sections.push({
+    groups.push({
       title: '网络搜索',
-      icon: <MagnifyingGlass size={16} />,
+      icon: <MagnifyingGlass size={14} />,
       tools: enabledSearchProviders.map((p) => ({
         name: 'search_web',
         desc: `搜索网络信息（${p}）`,
@@ -157,49 +119,63 @@ function ToolListDisplay({ enabledSearchProviders, enabledMCPServerIds, mcpServe
     });
   }
 
-  const enabledMCPs = mcpServers.filter((s) => enabledMCPServerIds.includes(s.id));
   for (const server of enabledMCPs) {
     const tools = (server.discoveredTools || []).filter((t) => t.enabled !== false);
     if (tools.length > 0) {
-      sections.push({
-        title: `MCP · ${server.name}`,
-        icon: <Plugs size={16} />,
+      groups.push({
+        title: server.name,
+        icon: <Plugs size={14} />,
         tools: tools.map((t) => ({ name: `mcp__${server.name}__${t.name}`, desc: t.description || '无描述' })),
       });
     }
   }
 
-  sections.push({
+  // 本地工具占位（即将推出）
+  groups.push({
     title: '本地工具',
-    icon: <Code size={16} />,
+    icon: <Code size={14} />,
     tools: [
       { name: 'get_time', desc: '获取当前时间' },
       { name: 'get_date', desc: '获取当前日期' },
     ],
   });
 
-  if (sections.length === 0) {
+  const totalToolCount = groups.reduce((s, g) => s + g.tools.length, 0);
+
+  if (totalToolCount === 0) {
     return <p className="settings-field__hint" style={{ marginTop: 8 }}>暂无可用工具</p>;
   }
 
   return (
-    <div style={{ marginTop: 8 }}>
-      {sections.map((section) => (
-        <details key={section.title} style={{ marginBottom: 8 }}>
-          <summary style={{ cursor: 'pointer', fontWeight: 500, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
-            {section.icon}
-            {section.title}（{section.tools.length}）
-          </summary>
-          <div style={{ marginTop: 4, paddingLeft: 4 }}>
-            {section.tools.map((tool) => (
-              <div key={tool.name} style={{ padding: '6px 8px', borderBottom: '1px solid var(--app-border)', fontSize: 12 }}>
-                <div style={{ fontWeight: 600, fontFamily: 'monospace', fontSize: 11 }}>{tool.name}</div>
-                <div style={{ color: 'var(--app-text-secondary)', fontSize: 11, marginTop: 2 }}>{tool.desc}</div>
-              </div>
-            ))}
-          </div>
-        </details>
-      ))}
-    </div>
+    <details className="context-block" style={{ marginTop: 12 }}>
+      <summary className="context-block__header">
+        <span className="context-block__tag context-block__tag--tool">
+          <Clock size={14} weight="fill" /> 可用工具
+        </span>
+        <span className="context-block__tokens">{totalToolCount} 个</span>
+      </summary>
+      <div className="context-block__content">
+        {groups.map((group) => (
+          <details key={group.title} style={{ margin: '4px 0' }}>
+            <summary style={{ cursor: 'pointer', fontWeight: 500, fontSize: 12, padding: '4px 8px', background: 'var(--app-secondary)' }}>
+              {group.icon} {group.title}（{group.tools.length}）
+            </summary>
+            <div style={{ padding: '4px 0' }}>
+              {group.tools.map((tool) => (
+                <div key={tool.name} style={{ padding: '6px 12px', borderBottom: '1px solid var(--app-border)', fontSize: 13 }}>
+                  <div style={{ fontWeight: 600, fontFamily: 'monospace', marginBottom: 2 }}>{tool.name}</div>
+                  <div style={{ color: 'var(--app-text-secondary)', fontSize: 12 }}>{tool.desc}</div>
+                </div>
+              ))}
+              {group.title === '本地工具' && (
+                <div style={{ padding: '6px 12px', fontSize: 11, color: 'var(--app-text-secondary)', fontStyle: 'italic' }}>
+                  ⏳ 即将推出
+                </div>
+              )}
+            </div>
+          </details>
+        ))}
+      </div>
+    </details>
   );
 }

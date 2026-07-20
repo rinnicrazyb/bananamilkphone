@@ -29,10 +29,8 @@ export default function AgentList() {
   const addAgent = useChatStore((s) => s.addAgent);
   const setActiveConversation = useChatStore((s) => s.setActiveConversation);
   const addConversation = useChatStore((s) => s.addConversation);
-  const updateAgentLastContact = useChatStore((s) => s.updateAgentLastContact);
 
   const openOrCreateConversation = (agentId: string) => {
-    updateAgentLastContact(agentId, Date.now());
     // 查找该智能体下已有对话，按更新时间排序，取最新的
     const existing = conversations
       .filter((c) => c.agentId === agentId)

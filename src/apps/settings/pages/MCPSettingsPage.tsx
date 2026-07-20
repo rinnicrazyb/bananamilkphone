@@ -37,7 +37,7 @@ async function testMCPConnection(server: MCPServer): Promise<{ ok: boolean; erro
     const { connectToServer } = await import('../../../services/mcp-client/index');
     const status = await connectToServer(server);
     const latency = Date.now() - start;
-    if (status.connected) return { ok: true, latency };
+    if (status.state === 'connected') return { ok: true, latency };
     return { ok: false, error: status.error || '连接失败', latency };
   } catch (err) {
     return { ok: false, error: (err as Error).message, latency: Date.now() - start };
@@ -49,14 +49,19 @@ async function discoverMCPTools(server: MCPServer): Promise<MCPDiscoveredTool[]>
   try {
     const { connectToServer, getDiscoveredTools } = await import('../../../services/mcp-client/index');
     const status = await connectToServer(server);
-    if (!status.connected) return [];
-    return (getDiscoveredTools(server.id) || []).map((t: Tool) => ({
-      name: t.name,
-      description: (t as any).description || '',
-      inputSchema: (t as any).inputSchema || {},
-      enabled: true,
-      needsApproval: false,
-    }));
+    if (status.state !== 'connected') return [];
+    // 保留已有的 enabled/needsApproval 设置，新工具默认启用
+    const existingMap = new Map((server.discoveredTools || []).map((t) => [t.name, t]));
+    return (getDiscoveredTools(server.id) || []).map((t: Tool) => {
+      const existing = existingMap.get(t.name);
+      return {
+        name: t.name,
+        description: (t as any).description || '',
+        inputSchema: (t as any).inputSchema || {},
+        enabled: existing?.enabled ?? true,
+        needsApproval: existing?.needsApproval ?? false,
+      };
+    });
   } catch {
     return [];
   }
@@ -99,6 +104,7 @@ export default function MCPSettingsPage({ onBack }: Props) {
   const handleToggle = useCallback(async (server: MCPServer) => {
     if (server.enabled) {
       updateMCPServer(server.id, { enabled: false, status: 'stopped' });
+      import('../../../services/mcp-client/index').then((mod) => mod.disconnectFromServer(server.id));
     } else {
       updateMCPServer(server.id, { enabled: true, status: 'connecting' });
       const conn = await testMCPConnection(server);
@@ -149,7 +155,10 @@ export default function MCPSettingsPage({ onBack }: Props) {
   }, [mcpServers, updateMCPServer]);
 
   const handleDelete = useCallback((id: string) => {
-    if (window.confirm('确定要删除此 MCP 服务器？')) removeMCPServer(id);
+    if (window.confirm('确定要删除此 MCP 服务器？')) {
+      import('../../../services/mcp-client/index').then((mod) => mod.disconnectFromServer(id));
+      removeMCPServer(id);
+    }
   }, [removeMCPServer]);
 
   // 表单模式

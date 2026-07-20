@@ -13,8 +13,11 @@ import {
   MusicNote,
 } from '@phosphor-icons/react';
 import { themeEngine } from './services/theme-engine/index';
+import { getItem, setItem } from './services/sqlite/index';
+import type { ThemeConfig } from './types';
 import LauncherPage from './apps/launcher/pages/LauncherPage';
 import ThemePage from './apps/theme/pages/ThemePage';
+import AppIconsPage from './apps/theme/pages/AppIconsPage';
 import ChatPage from './apps/chat/pages/ChatPage';
 import SettingsPage from './apps/settings/pages/SettingsPage';
 import { useAppStore } from './store/app-store';
@@ -35,6 +38,7 @@ function AppRoutes() {
     <Routes>
       <Route path="/" element={<LauncherPage />} />
       <Route path="/theme" element={<ThemePage />} />
+      <Route path="/theme/app-icons" element={<AppIconsPage />} />
       <Route path="/chat" element={<ChatPage />} />
       <Route path="/settings" element={<SettingsPage />} />
       <Route path="/lorebook" element={<LorebookListPage />} />
@@ -52,6 +56,7 @@ function AppRoutes() {
 
 export default function App() {
   const theme = useAppStore((s) => s.theme);
+  const _themeLoaded = useAppStore((s) => s._themeLoaded);
   const registerApp = useAppStore((s) => s.registerApp);
 
   // 数据持久化（加载已保存数据 + 自动防抖保存）
@@ -78,6 +83,56 @@ export default function App() {
   useEffect(() => {
     themeEngine.apply(theme);
   }, [theme]);
+
+  // 主题持久化（仅在加载完成后保存，防止首次挂载覆盖 SQLite）
+  useEffect(() => {
+    if (_themeLoaded) {
+      setItem('theme-config', JSON.stringify(theme));
+    }
+  }, [theme, _themeLoaded]);
+
+  // 加载已保存的主题配置 + 重载字体
+  useEffect(() => {
+    getItem('theme-config').then((saved) => {
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved) as Partial<ThemeConfig>;
+          const store = useAppStore.getState();
+          store.updateTheme(parsed);
+          themeEngine.apply(parsed);
+
+          // 重载自定义字体
+          if (parsed.fontData && parsed.fontFamily) {
+            const fontFace = new FontFace(parsed.fontFamily, `url(${parsed.fontData})`);
+            fontFace.load().then(() => {
+              document.fonts.add(fontFace);
+            }).catch(() => {});
+          }
+        } catch {
+          // 静默失败，使用默认主题
+        }
+      }
+      // 标记主题已加载，允许后续保存
+      useAppStore.getState()._setThemeLoaded();
+    });
+  }, []);
+
+  // 加载已保存的自定义图标（桌面初始化即需要）
+  useEffect(() => {
+    getItem('custom-icons').then((saved) => {
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved) as Record<string, string>;
+          const store = useAppStore.getState();
+          if (Object.keys(store.customIcons).length === 0) {
+            for (const [appId, dataUrl] of Object.entries(parsed)) {
+              store.setCustomIcon(appId, dataUrl);
+            }
+          }
+        } catch { /* ignore */ }
+      }
+    });
+  }, []);
 
   // 打开软件时检查待处理的记忆提取
   useEffect(() => {

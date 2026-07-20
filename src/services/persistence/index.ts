@@ -22,6 +22,7 @@ interface PersistedData {
   messages: Record<string, Message[]>;
   memories: Record<string, Memory[]>;
   lorebooks: Lorebook[];
+  desktopOrder?: string[];
   settings?: Record<string, unknown>;
   timestamp: number;
 }
@@ -50,15 +51,17 @@ async function writeData(
   conversations: Conversation[],
   messages: Record<string, Message[]>,
   memories: Record<string, Memory[]>,
-  lorebooks: Lorebook[] = []
+  lorebooks: Lorebook[] = [],
+  desktopOrder?: string[]
 ): Promise<void> {
   const data: PersistedData = {
-    version: 3,
+    version: 4,
     agents,
     conversations,
     messages,
     memories,
     lorebooks,
+    desktopOrder,
     timestamp: Date.now(),
   };
 
@@ -71,13 +74,14 @@ export function saveDataDebounced(
   conversations: Conversation[],
   messages: Record<string, Message[]>,
   memories: Record<string, Memory[]>,
-  lorebooks: Lorebook[] = []
+  lorebooks: Lorebook[] = [],
+  desktopOrder?: string[]
 ): void {
   if (debounceTimer) clearTimeout(debounceTimer);
 
   debounceTimer = setTimeout(async () => {
     try {
-      await writeData(agents, conversations, messages, memories, lorebooks);
+      await writeData(agents, conversations, messages, memories, lorebooks, desktopOrder);
     } catch (e) {
       console.warn('[Persistence] Save failed:', e);
     }
@@ -92,7 +96,8 @@ export function saveDataImmediately(
   conversations: Conversation[],
   messages: Record<string, Message[]>,
   memories: Record<string, Memory[]>,
-  lorebooks: Lorebook[] = []
+  lorebooks: Lorebook[] = [],
+  desktopOrder?: string[]
 ): void {
   if (debounceTimer) {
     clearTimeout(debounceTimer);
@@ -100,7 +105,7 @@ export function saveDataImmediately(
   }
 
   // 立即执行，不等待（fire-and-forget）
-  writeData(agents, conversations, messages, memories, lorebooks).catch((e) => {
+  writeData(agents, conversations, messages, memories, lorebooks, desktopOrder).catch((e) => {
     console.warn('[Persistence] Immediate save failed:', e);
   });
 }

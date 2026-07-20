@@ -327,3 +327,95 @@ if (enableMemory) messages.prepend(memoryPrompt)
 if (enableWebSearch) tools.push(searchTool)
 if (enableMCP) tools.push(...mcpTools)
 ```
+
+---
+
+## 十、Tool Call 消息格式正确序列化 — 关键发现
+
+> 对应 2026-07-18 调试过程中发现的 Bug：LLM 连续调用工具时返回 400 Bad Request
+> 错误信息：「Invalid assistant message: content or tool calls must be set」
+> 用户验证：每次调用工具后让 LLM 发一个消息或思考一下再调用下一个，就能成功——说明问题出在连续多 tool_call 的序列化格式上。
+
+### 10.1 Bug 根因：多 tool_calls 被拆分为多个 assistant 消息
+
+我方代码（`use-send-message.ts` 工具执行循环）的错误写法：
+
+```
+// ❌ 错误：为每个工具调用分别创建 assistant 消息
+for (const tc of toolCallAcc) {   // toolCallAcc = [call_1, call_2]
+  currentMessages.push({
+    role: 'assistant',
+    content: '',
+    toolCalls: [{ id: tc.id, ... }],   // ← 每个 assistant 只带一个 tool_call
+  });
+  currentMessages.push({
+    role: 'tool',
+    content: result,
+    toolCallId: tc.id,
+  });
+}
+```
+
+发送到 API 的消息序列变成：
+
+```
+assistant(content:null, tool_calls=[call_1])     ← assistant × 2！！！
+tool(result for call_1)
+assistant(content:null, tool_calls=[call_2])     ← 这个 assistant 不是 LLM 生成的！
+tool(result for call_2)
+```
+
+**违反规则**：OpenAI API 规范要求同一个 LLM 响应的所有 tool_calls 必须在 **一个** assistant 消息中。额外出现的 `assistant(tool_calls=[call_2])` 会让 API 认为客户端在捏造工具调用，返回 400 错误。
+
+### 10.2 正确格式（OpenAI API 规范）
+
+```
+// ✅ 正确：所有 tool_calls 合并到一条 assistant 消息
+assistant(content:null, tool_calls=[call_1, call_2])    ← 一条消息，全部工具
+tool(result for call_1)
+tool(result for call_2)
+```
+
+### 10.3 RikkaHub 的做法
+
+RikkaHub 的设计从根本上避免了这个问题：
+
+1. **内部格式**：工具调用结果（`output`）存储在 `UIMessagePart.Tool` 中，作为 assistant 消息的 **parts**（不是独立的 tool 消息）。
+
+2. **API 转换层**（`ChatCompletionsAPI.kt` 的 `buildMessages`）负责将内部格式转换为 API 格式：
+   - `groupPartsByToolBoundary()` 按工具边界分组
+   - 遇到已执行的工具组时：先输出一条 `assistant` 消息（含全部 tool_calls 定义），再输出每个工具的 `tool` 结果消息
+
+3. **代码路线（简化）**：
+   ```
+   // GenerationHandler 工具执行后——只更新 lastMessage 的 parts
+   val lastMessage = messages.last()
+   val updatedParts = lastMessage.parts.map { part ->
+     if (part is UIMessagePart.Tool) {
+       executedTools.find { it.toolCallId == part.toolCallId } ?: part
+     } else part
+   }
+   messages = messages.dropLast(1) + lastMessage.copy(parts = updatedParts)
+   // ^^^ 注意：没有创建任何新的 tool 消息！
+   
+   // Provider 层转换时才会拆分为 assistant + tool 格式
+   // 见 ChatCompletionsAPI.kt 的 buildMessages() + groupPartsByToolBoundary()
+   ```
+
+### 10.4 与 RikkaHub 的关键架构差异
+
+| 维度 | RikkaHub | 我方 |
+|------|----------|------|
+| 工具结果存储 | 作为 assistant 消息的部分（`parts`） | 独立 `tool` 角色消息 |
+| 消息构造时机 | Provider 层在序列化时自动拆分 | 在 use-send-message 中手动构造 |
+| 多工具处理 | 天然正确（同一条 assistant parts 内） | 需要警惕循环拆分问题 |
+| 内容字段处理 | `buildAssistantMessageJson` 中 content==""（空字符串） | `toAPIMessages` 中转为 `null` |
+
+### 10.5 对我方代码的修复要点
+
+1. **合并 tool_calls**：在执行工具前，先将 LLM 返回的 **全部** tool_calls 合并到 **一条** assistant 消息，再加到 `currentMessages`
+2. **保留原始内容**：`contentAcc`（LLM 助手回复的文本内容）应随 tool_calls 一起保存，不应丢弃
+3. **然后逐个添加 tool 结果**：每个工具结果作为独立的 `tool` 消息
+4. **注意 content 字段**：当有 tool_calls 时，OpenAI API 期望 `content: null`（我方 `toAPIMessages` 已正确处理）<｜end▁of▁thinking｜>
+
+<｜｜DSML｜｜parameter name="path" string="true">C:\bananamilkphone\项目书与更新日志\LEARN_RikkaHub_LLM_Assembly.md

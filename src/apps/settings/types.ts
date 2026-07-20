@@ -28,6 +28,12 @@ export interface MCPServer {
   lastError?: string;
   /** 连接后通过 tools/list 发现的工具 */
   discoveredTools: MCPDiscoveredTool[];
+  /** 连接超时（毫秒，默认 30000） */
+  timeout?: number;
+  /** 重试次数（默认 5） */
+  retryCount?: number;
+  /** 自动重连开关（默认 true） */
+  autoReconnect?: boolean;
 }
 
 /** 搜索供应商配置 */
@@ -77,6 +83,8 @@ export interface WebDAVConfig {
   username: string;
   password: string;
   remotePath: string;
+  /** 请求超时（毫秒，默认 60000） */
+  timeout?: number;
 }
 
 export const DEFAULT_WEBDAV_CONFIG: WebDAVConfig = {

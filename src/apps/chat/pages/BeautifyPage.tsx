@@ -3,7 +3,7 @@ import { CaretLeft, UploadSimple, Trash } from '@phosphor-icons/react';
 import { useChatStore } from '../store/chat-store';
 import { DEFAULT_DISPLAY_CONFIG } from '../types';
 import type { AgentDisplayConfig } from '../types';
-import AvatarCrop from '../components/AvatarCrop';
+import ImageCrop from '../../../components/ImageCrop';
 
 interface BeautifyPageProps {
   onBack: () => void;
@@ -128,7 +128,7 @@ export default function BeautifyPage({ onBack }: BeautifyPageProps) {
       </div>
 
       {cropSrc && (
-        <AvatarCrop src={cropSrc} shape="rect" onCrop={handleCropConfirm} onCancel={() => { setCropSrc(null); pendingField.current = null; }} />
+        <ImageCrop src={cropSrc} shape="rect" onCrop={handleCropConfirm} onCancel={() => { setCropSrc(null); pendingField.current = null; }} />
       )}
     </div>
   );

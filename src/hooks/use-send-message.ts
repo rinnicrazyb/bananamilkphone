@@ -3,12 +3,12 @@ import { useChatStore } from '../apps/chat/store/chat-store';
 import { useSettingsStore } from '../store/settings-store';
 import { useLorebookStore } from '../apps/lorebook/store/lorebook-store';
 import { streamChat, LLMError } from '../services/llm/index';
-import { searchWeb, SEARCH_TOOL_DEFINITION } from '../services/search/index';
+import { searchWeb, scrapeWeb, SEARCH_TOOL_DEFINITION, SCRAPE_TOOL_DEFINITION } from '../services/search/index';
 import { eventBus } from '../services/event-bus/index';
 import { runPipeline } from '../services/transformer-pipeline/index';
 import { extractMemories } from '../services/memory-extraction/index';
 import type { LLMConfig, LLMMessage, LLMToolDefinition } from '../services/llm/types';
-import type { Message, ToolCall } from '../apps/chat/types';
+import type { Message, MessagePart, ToolCall } from '../apps/chat/types';
 import type { MCPServer, SearchProviderConfig } from '../apps/settings/types';
 import type { TransformerContext } from '../services/transformer-pipeline/types';
 
@@ -43,9 +43,10 @@ function collectToolDefinitions(
 ): LLMToolDefinition[] {
   const tools: LLMToolDefinition[] = [];
 
-  // 1. 搜索工具
+  // 1. 搜索工具 + 抓取工具
   if (displayConfig.enabledSearchProviders && displayConfig.enabledSearchProviders.length > 0) {
     tools.push(SEARCH_TOOL_DEFINITION as LLMToolDefinition);
+    tools.push(SCRAPE_TOOL_DEFINITION as LLMToolDefinition);
   }
 
   // 2. MCP 工具
@@ -86,22 +87,47 @@ async function executeToolCall(
   if (name === 'search_web') {
     const query = (args.query || '').toString();
     if (!query) return '错误：搜索关键词为空';
-    // 用第一个启用的搜索供应商
     const providerKeys = Object.keys(searchProviders).filter(
       (k) => searchProviders[k].apiKey
     );
     if (providerKeys.length === 0) return '错误：未配置搜索供应商';
     const provider = providerKeys[0];
     try {
-      const results = await searchWeb(provider, searchProviders[provider], query);
-      if (results.length === 0) return `搜索 "${query}" 无结果`;
-      return JSON.stringify(results.map((r) => ({
-        title: r.title,
-        url: r.url,
-        content: r.content,
-      })));
+      const result = await searchWeb(provider, searchProviders[provider], query);
+      const items = result.items || [];
+      if (items.length === 0) return `搜索 "${query}" 无结果`;
+      return JSON.stringify({
+        answer: result.answer,
+        items: items.map((r) => ({
+          title: r.title,
+          url: r.url,
+          content: r.content,
+        })),
+        images: result.images,
+      });
     } catch (err) {
       return `搜索失败: ${(err as Error).message}`;
+    }
+  }
+
+  // 抓取网页工具
+  if (name === 'scrape_web') {
+    const url = (args.url || '').toString();
+    if (!url) return '错误：URL 为空';
+    const providerKeys = Object.keys(searchProviders).filter(
+      (k) => searchProviders[k].apiKey
+    );
+    if (providerKeys.length === 0) return '错误：未配置搜索供应商';
+    const provider = providerKeys[0];
+    try {
+      const result = await scrapeWeb(provider, searchProviders[provider], url);
+      return JSON.stringify({
+        url: result.url,
+        content: result.content,
+        metadata: result.metadata,
+      });
+    } catch (err) {
+      return `抓取失败: ${(err as Error).message}`;
     }
   }
 
@@ -117,7 +143,7 @@ async function executeToolCall(
       // 连接服务器（SDK 自动处理 initialize 握手）
       const { connectToServer, callToolOnServer } = await import('../services/mcp-client/index');
       const status = await connectToServer(server);
-      if (!status.connected) {
+      if (status.state !== 'connected') {
         return `MCP 连接失败: ${status.error || '未知错误'}`;
       }
 
@@ -172,6 +198,23 @@ export function useSendMessage() {
           status: 'sent',
         });
         return;
+      }
+
+      // 用户已发送消息 → 将所有 AI 消息标记为已读
+      const { messages: curMessages } = useChatStore.getState();
+      const curConvMsgs = curMessages[conversationId] || [];
+      let hasUnreadAi = false;
+      const aiReadMarked = curConvMsgs.map((m) => {
+        if (m.role === 'assistant' && m.status === 'sent') {
+          hasUnreadAi = true;
+          return { ...m, status: 'read' as const };
+        }
+        return m;
+      });
+      if (hasUnreadAi) {
+        useChatStore.setState({
+          messages: { ...curMessages, [conversationId]: aiReadMarked },
+        });
       }
 
       const effectiveConfig: LLMConfig = {
@@ -280,7 +323,29 @@ export function useSendMessage() {
                 };
               }
 
-              // 实时更新消息内容（含 token 用量）
+                            // 构建 parts 数组（RikkaHub 风格多类型消息）
+              function buildParts(): MessagePart[] {
+                const parts: MessagePart[] = [];
+                if (reasoningAcc) {
+                  parts.push({ type: 'reasoning', content: reasoningAcc, finishedAt: finalFinishReason ? Date.now() : undefined });
+                }
+                if (contentAcc) {
+                  parts.push({ type: 'text', content: contentAcc });
+                }
+                for (const tc of toolCallAcc) {
+                  parts.push({
+                    type: 'tool_call',
+                    toolCallId: tc.id,
+                    toolName: tc.function.name,
+                    input: tc.function.arguments,
+                    isExecuted: false,
+                    approvalState: 'auto',
+                  });
+                }
+                return parts;
+              }
+
+// 实时更新消息内容（含 token 用量）
               const store = useChatStore.getState();
               const msgs = store.messages[conversationId] || [];
               const updated = msgs.map((m: Message) =>
@@ -291,6 +356,7 @@ export function useSendMessage() {
                       reasoning: reasoningAcc || undefined,
                       toolCalls: toolCallAcc.length > 0 ? toolCallAcc : undefined,
                       status: 'sent' as const,
+                      parts: buildParts(),
                       tokenCount: usageData ? {
                         prompt: usageData.prompt,
                         completion: usageData.completion,
@@ -318,16 +384,23 @@ export function useSendMessage() {
             break;
           }
 
-          // 执行所有工具调用
+          // ── 将 LLM 返回的原始 assistant 消息（含全部 tool_calls）加入消息序列 ──
+          // 注意：所有 tool_calls 必须在同一条 assistant 消息中，不能拆分（DeepSeek 等 API 严格要求）
+          currentMessages.push({
+            role: 'assistant',
+            content: contentAcc || '',
+            toolCalls: toolCallAcc.map(tc => ({
+              id: tc.id,
+              type: 'function',
+              function: { name: tc.function.name, arguments: tc.function.arguments }
+            })),
+          });
+
+          // 执行所有工具调用，每个工具结果作为独立的 tool 消息
           for (const tc of toolCallAcc) {
             const result = await executeToolCall(tc, mcpServers, searchProviders as unknown as Record<string, SearchProviderConfig>);
 
             // 添加 tool 结果消息
-            currentMessages.push({
-              role: 'assistant',
-              content: '',
-              toolCalls: [{ id: tc.id, type: 'function', function: { name: tc.function.name, arguments: tc.function.arguments } }],
-            });
             currentMessages.push({
               role: 'tool',
               content: result,
@@ -345,6 +418,34 @@ export function useSendMessage() {
               status: 'sent',
             });
           }
+
+          // 工具执行完毕：更新 assistant 消息的 parts，标记 tool_call 为已执行
+          const toolResults: Record<string, string> = {};
+          for (const tc of toolCallAcc) {
+            toolResults[tc.id] = tc.function.name;
+          }
+          const storeNow = useChatStore.getState();
+          const msgsNow = storeNow.messages[conversationId] || [];
+          const updatedWithTools = msgsNow.map((m) =>
+            m.id === roundReplyId && m.parts
+              ? {
+                  ...m,
+                  parts: m.parts.map((p) => {
+                    if (p.type === 'tool_call' && toolResults[p.toolCallId]) {
+                      // 从最近的 tool 消息中找结果
+                      const toolMsg = msgsNow.find(
+                        (tm) => tm.role === 'tool' && tm.toolCallId === p.toolCallId
+                      );
+                      return { ...p, output: toolMsg?.content || '无返回', isExecuted: true };
+                    }
+                    return p;
+                  }),
+                }
+              : m
+          );
+          useChatStore.setState({
+            messages: { ...storeNow.messages, [conversationId]: updatedWithTools },
+          });
 
           // 继续下一轮迭代
         }

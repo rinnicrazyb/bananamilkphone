@@ -34,8 +34,7 @@ export default function ChatInput({ onPlusClick }: ChatInputProps) {
     }
 
     // 更新智能体最后联络时间
-    const state = useChatStore.getState();
-    const conv = state.conversations.find((c) => c.id === activeConversationId);
+    const conv = useChatStore.getState().conversations.find((c) => c.id === activeConversationId);
     if (conv) updateAgentLastContact(conv.agentId, Date.now());
 
     setSending(true);

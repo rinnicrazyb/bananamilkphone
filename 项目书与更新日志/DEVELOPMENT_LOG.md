@@ -798,3 +798,360 @@ b3f9433 fix: sql.js wasm 路径修复
 54d8553 feat(backup): sql.js + WebDAV 同步完整实现
 6cb865e fix(storage): 修复 SQLite 浏览器端初始化 + 备份 UX
 ```
+
+---
+
+## 2026-07-18：主题 APP 完善 + 世界书收尾 + 存储架构审查
+
+### 本轮完成的工作
+
+#### 1. 共享裁剪组件 `src/components/ImageCrop.tsx`（新建 + 重写）
+
+**第一版**（初始）：裁剪框可拖拽移动，缩放图片
+**第二版**（重写）：固定裁剪框居中，拖拽/缩放移动**图片本身**（仿微信头像裁剪模式）
+
+核心能力：
+- 滚轮/双指缩放图片
+- 拖拽移动图片（不是裁剪框）
+- 自适应容器尺寸（ResizeObserver）
+- 圆形（头像）+ 矩形（壁纸/图标/书封）双形状
+- 替换了旧 `AvatarCrop.tsx`（已删除），全项目 5 处统一使用
+
+#### 2. 主题 APP 完善
+
+| 模块 | 改动 |
+|------|------|
+| **壁纸上传** | 新增裁剪步骤（ImageCrop，9:16 手机比例） |
+| **壁纸预览** | 透明度/模糊度滑块实时反映在预览图上 |
+| **壁纸移除** | 新增「移除壁纸」按钮 |
+| **自定义字体** | TTF dataURL 存到 `ThemeConfig.fontData`，启动时自动重载 FontFace |
+| **自定义 APP 图标** | 🆕 新建 `/theme/app-icons` 页面 |
+| **导航** | 管理图标按钮用 `useNavigate`，SPA 内跳转不卡 |
+
+#### 3. 存储架构审查与持久化 Bug 修复
+
+**审查发现**：
+- 项目书写"IndexedDB"，实际代码用 SQLite (sql.js WASM) + IndexedDB 存 .db 文件 → 已更新项目书
+
+**Bug 修复（4 个持久化问题）**：
+
+| Bug | 根因 | 修复 |
+|-----|------|------|
+| 刷新后壁纸/主题丢失 | ThemePage 的 `useEffect` 挂载时用默认值覆盖 SQLite | 主题持久化移到 App.tsx，加 `_themeLoaded` flag |
+| 刷新后图标预设丢失 | 组件 effect 时序竞态（两个 effect 相互覆盖） | AppIconsPage 改用 zustand `subscribe`（非 React effect），Promise.all 等待双加载完成 |
+| 刷新后字体丢失 | TTF dataURL 没保存 | `ThemeConfig.fontData` 持久化，App.tsx 启动时重载 FontFace |
+| 刷新后桌面图标恢复默认 | custom-icons 只在 AppIconsPage 加载，App.tsx 启动时未加载 | App.tsx 启动时加载 custom-icons |
+
+**图标管理页重设计**（根据用户反馈）：
+- 「默认图标」作为预设列表固定选项，点击即恢复全部默认
+- APP 列表标题改为「当前图标」，实时反映桌面配置
+- 「保存当前为预设」按钮，预设应用后 APP 列表即时切换
+
+#### 4. 世界书 APP 收尾
+
+| 功能 | 实现 |
+|------|------|
+| **书封裁剪** | 上传封面先进 ImageCrop（3:4 书籍比例），确认才保存 |
+| **导出** | 每个书卡右下角 `DownloadSimple` 按钮，导出该世界书的 `.json` |
+| **导入** | 「添加世界书」改为弹窗选项：「新建」/「导入已有」 |
+
+#### 5. 学习文档
+
+| 文档 | 说明 |
+|------|------|
+| `项目书与更新日志/LEARN_RikkaHub_Storage_Backup.md` 🆕 | RikkaHub 存储架构分析 + 我方对比 + 持久化防踩坑指南 |
+| `项目书与更新日志/bananamilkphone项目书.md` | 技术栈表更新（存储架构对齐实际代码） |
+
+#### 6. 涉及文件清单
+
+```
+🆕  src/components/ImageCrop.tsx
+🆕  src/apps/theme/pages/AppIconsPage.tsx
+🆕  项目书与更新日志/LEARN_RikkaHub_Storage_Backup.md
+🗑️  src/apps/chat/components/AvatarCrop.tsx
+✏️  src/App.tsx
+✏️  src/store/app-store.ts
+✏️  src/types/index.ts
+✏️  src/apps/theme/pages/ThemePage.tsx
+✏️  src/apps/launcher/components/AppIcon.tsx
+✏️  src/apps/chat/components/AgentSettings.tsx
+✏️  src/apps/chat/pages/ChatSettingsPage.tsx
+✏️  src/apps/chat/pages/BeautifyPage.tsx
+✏️  src/apps/lorebook/pages/LorebookListPage.tsx
+✏️  src/apps/lorebook/pages/LorebookDetailPage.tsx
+✏️  src/index.css
+✏️  项目书与更新日志/bananamilkphone项目书.md
+```
+
+### 当前项目进度总览（2026-07-18）
+
+#### APP 状态
+
+| APP | 状态 | 说明 |
+|-----|------|------|
+| **聊天 APP** | ✅ 功能完整 | 8 项功能盒 + 记忆提取 + Transformer Pipeline + 全部 Bug 修复 + 气泡/思考链/工具链美化 |
+| **世界书 APP** | ✅ 开发完成 | 数据层+注入逻辑+UI+绑定+持久化+测试+**书封裁剪+导入导出**全齐 |
+| **设置 APP** | ✅ 基础可用 | API 配置（Key 加密）+ 模型/参数/WebDAV/备份 |
+| **主题 APP** | ✅ 功能完整 | 壁纸（裁剪+透明度+模糊度）+ 字体 + 自定义 APP 图标（预设/上传/保存） |
+| **桌面主屏幕** | ⚠️ 需完善 | 分页导航+触摸拖拽+跨页移动 |
+| **记忆游廊 APP** | ⬜ 未开始 | 用户要求"非常重要后续再做" |
+| 其余 APP | ⬜ 占位目录 | Phase 3 |
+
+#### 关键技术决策（本窗口确立/更新）
+
+| 决策 | 结论 |
+|------|------|
+| 裁剪交互模型 | 裁剪框固定居中，拖拽/缩放移动图片（非裁剪框） |
+| 持久化策略 | 不在组件 useEffect 里 save（会竞态），改用 zustand subscribe 或 App.tsx 统一管理 |
+| 图标管理 UI | APP 列表实时反映桌面当前配置，「默认图标」作为预设列表固定选项 |
+| 存储架构 | SQLite (sql.js) → IndexedDB 存 .db 文件。图片以 dataURL 存 app_data 表 |
+
+#### 下一步入口（按优先级）
+
+1. **桌面主屏幕完善** — 分页导航圆点 + 触摸滑动 + 跨页拖拽
+2. **主动消息功能** — 事件监听 → APP 内弹窗 + 手机通知栏推送
+3. **MCP 连接问题** — nocturne_memory 连接仍有问题，待排查
+4. **记忆游廊 APP** — 用户说"非常重要后续再做"
+5. **自定义 CSS 预设** — 用户说延后，后续再处理
+
+---
+
+## 2026-07-19：MCP/WebDAV/搜索 全链路修复 + Kotlin 原生架构转型
+
+### 背景
+
+手机端 MCP 全部报 nginx 400，WebDAV PROPFIND 被 CapacitorHttp 拦截，网络搜索 HTTP 400。
+浏览器端一切正常。经过 6 轮排查和修复，最终确认**两个根因**：
+
+1. **`isViteDev()` 在 APK 中返回 true** — Capacitor 以 `androidScheme: 'https'` 加载 → hostname = `localhost` → `isViteDev()` 误判。
+2. **Capacitor Bridge 的 JSON 序列化损坏 HTTP body** — 无论怎么修 Headers/Body/CapcitorHttp/base64，只要 body 经过 Bridge 传输到原生层再转 OkHttp，就有可能被损坏。
+
+### 最终架构：对齐 RikkaHub
+
+```
+浏览器                                手机 (APK)
+MCP:   JS SDK + fetch + Vite proxy     Kotlin MCP SDK + Ktor + OkHttp
+搜索:    fetch + Vite proxy              HttpNativePlugin (OkHttp, base64 body)
+WebDAV:  fetch + Vite proxy              HttpNativePlugin (OkHttp, base64 body)
+LLM:     fetch (SSE)                     WebView fetch (SSE, 保持不变)
+```
+
+### 完成的工作
+
+#### 1. 修复 `isViteDev()` bug — 抓取功能恢复
+
+**文件：** `src/utils/platform.ts`
+**改动：** `isViteDev()` 加 `&& !isNative()` 条件
+**影响：** APK 中不再误判为 Vite 开发环境，Tavily scrape 不再把 `/mcp-proxy` 当 URL 传给 OkHttp。
+
+#### 2. Kotlin MCP SDK 集成 — MCP 手机端全面可用
+
+**新建文件：**
+- `McpKotlinService.kt` — Kotlin object，封装 MCP SDK Client + Ktor/OkHttp，提供 connect/disconnect/callTool
+- `McpKotlinBridgePlugin.java` — Capacitor 插件，JS ↔ Kotlin 桥接
+- `src/services/mcp-client/kotlin-bridge.ts` — TypeScript 封装
+
+**修改文件：**
+- `android/build.gradle` — Kotlin 2.4.0 + Serialization 插件
+- `android/app/build.gradle` — `io.modelcontextprotocol:kotlin-sdk:0.14.0` + Ktor 3.4.3
+- `src/services/mcp-client/index.ts` — `connectToServer`/`callToolOnServer`/`disconnectFromServer` 三个函数增加 `isNative()` → Kotlin 分支
+- `MainActivity.java` — 注册 `McpKotlinBridgePlugin`
+
+**技术选型对齐 RikkaHub：**
+| 组件 | RikkaHub | 香蕉牛奶机 |
+|------|----------|-----------|
+| Kotlin | 2.4.0 | 2.4.0 |
+| MCP SDK | 0.14.0 (Kotlin) | 0.14.0 (Kotlin) |
+| HTTP 引擎 | Ktor + OkHttp | Ktor + OkHttp |
+| Ktor | 3.4.3 | 3.4.3 |
+
+**效果：** 手机端 MCP 全部可用（包括需要认证和不认证的服务器），浏览器端保持不变。
+
+#### 3. 统一原生 HTTP 插件 — HttpNativePlugin
+
+**新建文件：** `HttpNativePlugin.java`、`src/services/http-native.ts`
+
+**替代：** `McpNativePlugin.java`、`WebDavNativePlugin.java`（旧文件保留但不再注册）
+
+**设计：**
+- body 以 base64 编码从 JS 传到 Java，杜绝 Bridge 序列化损坏
+- Content-Type 强制 `application/json; charset=utf-8`（对齐 Ktor 行为）
+- 响应 body 也以 base64 返回，JS 端解码
+
+#### 4. WebDAV 恢复逻辑修复
+
+**文件：** `src/apps/settings/pages/WebDAVPage.tsx`
+- "下载"按钮改为"恢复"按钮，下载后自动调用 `restoreFromZip()`
+- 恢复成功后 `setTimeout → window.location.reload()`（RikkaHub `exitProcess(0)` 的等价操作）
+- 原因：`importDatabase` 替换 SQLite 内存 + IndexedDB，但 Zustand stores 已加载旧数据到 React state，需要页面重载
+
+#### 5. 搜索/抓取/crape 全链路修复
+
+**文件：** `src/services/search/index.ts`
+- `fetchApi()` 改走 `nativeFetch`（HttpNative），不再走 CapacitorHttp
+- 手机端搜索三个供应商（Tavily/Firecrawl/Tinyfish）全部可用
+
+#### 6. WebDAV 迁移到 HttpNative
+
+**文件：** `src/services/webdav/index.ts`
+- `isNative()` 分支改走 `httpRequest`（HttpNative）
+
+### 已知问题（未修复，记录留档）
+
+| 问题 | 分析 | 状态 |
+|------|------|------|
+| 抓取 JSON 文件 content 为空 | Tavily extract API 对 JSON 端点不返回内容（API 行为），`.py` 等格式正常 | ⚠️ 待后续用 Tinyfish scrape 或 Firecrawl 补充 |
+| LLM 工具调用后空回复 | 工具结果 content 为空 → LLM 产出空文本 → `status='sent'` 但 `content=''` → UI 不可见 | ⚠️ 待后续添加空 content 兜底文案 |
+
+### APP 状态总览（2026-07-19）
+
+| APP | 状态 | 说明 |
+|-----|------|------|
+| 聊天 APP | ✅ | 8 项功能盒 + 记忆提取 + Transformer Pipeline + 思考链/工具链美化 + HTML 渲染 |
+| 世界书 APP | ✅ | 数据层+注入逻辑+UI+绑定+持久化+书封裁剪+导入导出 |
+| 设置 APP | ✅ | API 配置 + WebDAV + 备份恢复 + MCP 配置 |
+| 主题 APP | ✅ | 壁纸+字体+自定义 APP 图标+预设管理 |
+| **MCP** | ✅ | 手机端 Kotlin SDK ✅ 浏览器端 JS SDK ✅ |
+| **WebDAV** | ✅ | 测试连接 ✅ 上传 ✅ 列出 ✅ 恢复（下载+自动导入+重载）✅ 删除 ✅ |
+| **网络搜索** | ✅ | 三大供应商搜索可用 ✅ 抓取基本可用 ⚠️ JSON 文件空 |
+| 桌面主屏幕 | ⚠️ | 分页导航+触摸拖拽+跨页移动 |
+| 记忆游廊 APP | ⬜ | 未开始 |
+
+### 打包命令
+
+```bash
+# 1. TypeScript 构建
+cd C:/bananamilkphone
+npm run build
+
+# 2. 同步到 Android
+npx cap sync android
+
+# 3. APK 构建（必须用 JDK 21）
+export JAVA_HOME="C:/Program Files/Eclipse Adoptium/jdk-21.0.11.10-hotspot"
+export PATH="$JAVA_HOME/bin:$PATH"
+cd android
+./gradlew assembleDebug
+
+# 4. APK 位置
+# android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+**JDK 注意：** 必须 JDK 21（Temurin），JDK 26 会导致 `JdkImageTransform` 任务失败。已配置在 `android/gradle.properties` 的 `org.gradle.java.installations.paths` 中。
+
+### Git 状态
+
+```
+⚠ 大量未提交更改（包括 Kotlin/Java 新文件 + JS 修改 + build.gradle 变更）
+建议：提交并推送
+```
+
+### 下一步入口
+
+1. 抓取 JSON 文件 content 为空 — 考虑 Tinyfish scrape 兜底
+2. LLM 空回复 — 添加空 content 兜底文案
+3. 桌面主屏幕完善
+4. 主动消息功能
+5. 记忆游廊 APP
+
+---
+
+## 2026-07-21（多轮会话）：桌面主屏幕拖拽修复 — 完整记录
+
+### 背景
+
+桌面主屏幕 4×6 网格的拖拽交互（仿 Android 手机主屏）存在多个 bug：
+- 建新页后图标卡死在屏幕边缘
+- 翻页后图标不跟手
+- 松手后图标弹回原位
+- 拖拽时浏览器弹出图片右键菜单
+- 拖拽后中间图标自动补位（不应补位）
+- 翻页后 ghost 悬浮残留
+
+### 修复历程（4 轮）
+
+**第 1 轮：基础修复（performCollision + transition + 冷却 + contextmenu）**
+
+| 改动 | 效果 |
+|------|------|
+| `performCollision` 从循环移位改为**直接交换**两个槽位 | 移走图标后原位置留空，不会自动排序补位 ✅ |
+| 拖拽期间 track `transition: none` | 翻页瞬间完成，不让 animation 干扰坐标计算 ✅ |
+| `hasTriggeredEdgeRef` 边缘冷却 | 翻页后必须离开边缘才能再次触发，防止连建多页 ✅ |
+| `onContextMenu` 条件阻止 | 拖拽时浏览器右键菜单不弹 ✅ |
+
+**第 2 轮：`getGlobalIdx` 翻页坐标计算（翻车）**
+- 错误地把 `pageW` 改成 `trackRect.width / totalPages`
+- 根因：认为 track 的 `getBoundingClientRect().width` 是所有页的总宽
+- 实际：CSS translateX 不改变盒模型宽度，`trackRect.width ≈ 视口宽`
+- 缩小后的 `pageW` 导致 `pageUnderFinger` 指向错误页面 → 翻页后坐标全错
+- 结论：第 2 轮引入了一个 bug，让拖拽更严重
+
+**第 3 轮：修正坐标 + `handleTouchEnd` 最终碰撞**
+- 恢复 `pageW = trackRect.width`
+- 添加 `lastValidGlobalIdxRef`，松手前做一次最终碰撞提交
+- 但仍没解决核心 bug：ghost 翻页后不跟手
+
+**第 4 轮：原生事件监听 + 预分配页面（终于找对根因）**
+
+| 发现 | 说明 |
+|------|------|
+| **浏览器 `touchcancel`** | DOM 结构变化（增删页面元素）时，浏览器强制终止当前触摸序列 |
+| 原生监听器绕过 React 合成事件 | `useEffect` 添加原生 `touchmove`/`touchend`，不依赖 React 的 re-render 换绑机制 |
+| 预分配 3 页 | `totalSlots` 最低 72（PAGE_SIZE×3），拖拽翻页只改 `currentPage`（transform），不动 DOM 结构 |
+
+**保留的正向改动（第 4 轮后）：**
+- ✅ 交换逻辑（不移位补空）
+- ✅ transition: none（拖拽时）
+- ✅ 边缘冷却（`hasTriggeredEdgeRef`）
+- ✅ contextmenu 阻止
+- ✅ `lastValidGlobalIdxRef` 最终碰撞
+- ✅ `getGlobalIdx` 用 `clampedPage`（React state）做 `pageUnderFinger`
+- ✅ col/row 用 `gridRef` 视口坐标（不受 translateX 污染）
+- ✅ 原生 touchmove/touchend 监听器
+- ✅ 预分配 3 页防止 touchcancel
+- ✅ 恢复合成 `onTouchMove`/`onTouchEnd`（修复滑动切屏）
+
+### 当前 APP 状态总览
+
+| APP | 状态 | 说明 |
+|-----|------|------|
+| 聊天 APP | ✅ | 8 项功能盒 + 记忆提取 + Transformer Pipeline + HTML 渲染 |
+| 世界书 APP | ✅ | 数据层+注入逻辑+UI+绑定+持久化+书封裁剪+导入导出 |
+| 设置 APP | ✅ | API 配置 + WebDAV + 备份恢复 + MCP 配置 |
+| 主题 APP | ✅ | 壁纸+字体+自定义 APP 图标+预设管理 |
+| **桌面主屏幕** | ⚠️ **需 APK 实测** | 浏览器拖拽基本就绪，`touchcancel` 是浏览器限制，APK 中可能无此问题 |
+| 记忆游廊 APP | ⬜ | 未开始 |
+
+### 教训（写入记忆）
+
+**Bug 修复原则：** 同一 bug 修复 2 轮无效后，立即停下上网搜索根因——是设备/浏览器硬性限制还是代码写漏了。不要死磕。
+
+### 关键技术决策（本窗口确立/更新）
+
+| 决策 | 结论 |
+|------|------|
+| 拖拽碰撞模型 | 直接交换两个槽位（不移位），源位置留空 |
+| 翻页坐标计算 | `pageUnderFinger` = `clampedPage`（React state），col/row = `gridRef` 视口坐标 |
+| DOM 变化 vs touchcancel | 预分配页面防止拖拽中 DOM 结构变化 |
+| 事件系统 | 拖拽期间用原生监听器绕过 React 合成事件换绑间隙 |
+
+### 已知问题
+
+| 问题 | 分析 | 状态 |
+|------|------|------|
+| 浏览器拖拽翻页断触 | `touchcancel` 是浏览器安全机制（DOM 变化时终止 touch 序列），APK 中 Kotlin 原生触摸系统无此限制 | ⚠️ 待 APK 实测确认 |
+| 物理 4×6 布局验证 | 当前在浏览器测试，真实手机屏幕尺寸和电容触摸效果需 APK 验证 | ⚠️ 待 APK 打包 |
+
+### Git 状态
+
+```
+⚠ 大量未提交更改（本轮所有 AppGrid 修复 + 原生监听器 + 预分配页面 + 之前未提交的 Kotlin/Java 文件）
+建议：提交并推送
+```
+
+### 下一步入口（按优先级）
+
+1. **APK 打包测试** — 浏览器上的 touchcancel 问题可能不存在于原生安卓，需要实际打包验证
+2. **主动消息功能** — 事件监听 → APP 内弹窗 + 手机通知栏推送
+3. **记忆游廊 APP** — 用户说"非常重要后续再做"
+4. 抓取 JSON 空内容 / LLM 空回复兜底文案

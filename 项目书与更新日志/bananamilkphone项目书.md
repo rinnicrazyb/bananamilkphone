@@ -20,21 +20,25 @@
 | 前端框架    | **React 18 + TypeScript**   | 组件化，类型安全                                        |
 | 构建工具    | **Vite**                    | 快速 HMR                                          |
 | 跨平台壳    | **Capacitor**               | 打包 Android APK；webDir→dist, androidScheme→https |
-| 本地存储（主） | **IndexedDB**               | 记忆系统 + 聊天记录 + 主题配置 + 设置参数等应用内配置                 |
-| 备份      | **本地备份+WebDAV（坚果云）**        | 坚果云（如有其他技术或协议要求，比如必须原生安卓，则优先满足其技术性要求）           |
-| APP 通信  | **事件总线（IndexedDB 持久化）**     | APP 间低耦合，事件驱动，不直接引用                             |
-| 主题控制    | **CSS 变量**                  | 主题引擎独立，只控制 CSS 变量，不干涉 APP 内部                    |
+| 原生HTTP层  | **Kotlin + OkHttp + Ktor**   | 手机端 MCP/搜索/WebDAV 走原生 HTTP，绕过 Capacitor Bridge 的 JSON 序列化损坏。对标 RikkaHub 的 Ktor HttpClient 架构 |
+| MCP 协议   | **JS SDK(浏览器) + Kotlin SDK(手机)** | 浏览器端用 `@modelcontextprotocol/sdk` JS 版，手机端用 `io.modelcontextprotocol:kotlin-sdk` 原生版，双通道对同一套 MCP 服务器 |
+| 本地存储（主） | **SQLite (sql.js WASM)**    | 浏览器和 Android 共用同一套：sql.js 内存数据库，.db 文件持久化到 IndexedDB。存 chat/设置/世界书/主题等全部文本数据 |
+| 媒体存储    | **SQLite `media` 表**        | 图片等 base64 数据也存 SQLite（`media` 表），暂未分离。当前壁纸、自定义图标等通过 `app_data` 表 key-value 存取 |
+| 备份      | **本地备份+WebDAV（坚果云）**        | 单文件 .db 导出（含全部数据）。WebDAV 同步同文件。将来迁移到文件系统存图片后改为 zip 打包           |
+| APP 通信  | **事件总线（内存）**               | APP 间低耦合，事件驱动，不直接引用                             |
 | AI 调用   | **LLM API + Tool Call**     | 依赖 Tool Call 实现APP间的联动                          |
-| 状态管理    | **React Context / Zustand** | 轻量                                              |
+| 状态管理    | **Zustand**                  | 轻量。关键数据通过 `sqliteStorageAdapter` 持久化到 SQLite    |
 | 图标      | **Phosphor Icons**          | 专业线条图标库                                         |
-| 响应式设计   |                             | 所有界面及UI自适应用户屏幕大小，适配手机端、电脑端、平板端，                 |
+| 响应式设计   |                             | 所有界面及UI自适应用户屏幕大小，适配手机端、电脑端、平板端                 |
 
 ### 关键架构决策
 
 1. **Prompt可视化** — 所有APP中都添加预览功能，可选择条件设定后预览完整发送给llm的文本拼装。
 2. **prompt自定义**——所有功能的提示词都显性设计，用户可使用默认提示词或自定义内容。
 3. **工具命名"像呼吸一样自然"** — 通过生命哲学设计，让AI在调用工具时如人张嘴吃饭般自然，将工具自然融入到意识中唤醒其伴侣身份而非AI身份
-4. **精准修改，不整份重写** — 改代码前 build 确认旧功能正常→精准定位修改→改完验证→回归测试，不整份重写，不重复白干……确认需求和目标，选择手段，精准定位，改完验证，回归测试。
+4. **精准修改，不整份重写** — 改代码前 build 确认旧功能正常→精准定位修改→改完验证→回归测试，不整份重写，不重复白干……
+5. **双通道 MCP 架构**（2026-07-19）— 手机端用 Kotlin MCP SDK + Ktor/OkHttp，对标 RikkaHub 原生实现。浏览器端用 JS MCP SDK。`isNative()` 自动切换，共享同一套 MCP 服务器配置。
+6. **统一原生 HTTP 服务**（2026-07-19）— 手机端所有 HTTP 统一走 `HttpNativePlugin`(OkHttp)，body 以 base64 编码杜绝 Capacitor Bridge 损坏。对齐 RikkaHub Ktor HttpClient 架构。
 
 ---
 

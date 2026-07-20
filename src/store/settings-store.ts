@@ -12,6 +12,8 @@ export interface SettingsState {
   mcpServers: MCPServer[];
   notificationsEnabled: boolean;
   webdavConfig: WebDAVConfig;
+  /** MCP OAuth 持久化状态（serverId → JSON） */
+  mcpOAuthState: Record<string, string>;
 }
 
 export interface SettingsActions {
@@ -28,6 +30,8 @@ export interface SettingsActions {
   removeMCPServer: (id: string) => void;
   setNotificationsEnabled: (enabled: boolean) => void;
   updateWebDAVConfig: (config: Partial<WebDAVConfig>) => void;
+  /** 保存 MCP OAuth 状态 */
+  setMCPOAuthState: (serverId: string, state: string) => void;
 }
 
 export const useSettingsStore = create<SettingsState & SettingsActions>()(
@@ -46,6 +50,7 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
       mcpServers: [],
       notificationsEnabled: false,
       webdavConfig: { ...DEFAULT_WEBDAV_CONFIG },
+      mcpOAuthState: {},
 
       // ---- Actions ----
       updateLLMConfig: (config) =>
@@ -100,6 +105,10 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
       updateWebDAVConfig: (config) =>
         set((state) => ({
           webdavConfig: { ...state.webdavConfig, ...config },
+        })),
+      setMCPOAuthState: (serverId, state) =>
+        set((prev) => ({
+          mcpOAuthState: { ...prev.mcpOAuthState, [serverId]: state },
         })),
     }),
     {

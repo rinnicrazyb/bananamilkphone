@@ -10,7 +10,7 @@ import { X, UploadSimple } from '@phosphor-icons/react';
 import { useChatStore } from '../store/chat-store';
 import { useSettingsStore } from '../../../store/settings-store';
 import { useLorebookStore } from '../../../apps/lorebook/store/lorebook-store';
-import AvatarCrop from './AvatarCrop';
+import ImageCrop from '../../../components/ImageCrop';
 
 export default function AgentSettingsPanel() {
   const agents = useChatStore((s) => s.agents);
@@ -230,7 +230,7 @@ export default function AgentSettingsPanel() {
       </div>
 
       {cropSrc && (
-        <AvatarCrop src={cropSrc} onCrop={handleCropConfirm} onCancel={() => setCropSrc(null)} />
+        <ImageCrop src={cropSrc} shape="circle" onCrop={handleCropConfirm} onCancel={() => setCropSrc(null)} />
       )}
     </div>
   );

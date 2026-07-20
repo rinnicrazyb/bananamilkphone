@@ -56,7 +56,7 @@ export const DEFAULT_DISPLAY_CONFIG: AgentDisplayConfig = {
   bgBlur: 0,
   showAvatars: true,
   useBubbles: true,
-  segmentBubbles: false,
+  segmentBubbles: true,
   bubbleFollowAvatar: false,
   showTime: true,
   showTokens: false,
@@ -121,14 +121,26 @@ export interface ToolDefinition {
   };
 }
 
+/** 消息内容部件 — RikkaHub 风格多类型消息 */
+export type MessagePart =
+  | { type: 'text'; content: string }
+  | { type: 'image'; url: string }
+  | { type: 'reasoning'; content: string; finishedAt?: number }
+  | { type: 'tool_call'; toolCallId: string; toolName: string; input: string; output?: string; isExecuted?: boolean; approvalState?: 'auto' | 'pending' | 'approved' | 'denied' }
+  | { type: 'html'; content: string };
+
 /** 消息 */
 export interface Message {
   id: string;
   conversationId: string;
   role: 'user' | 'assistant' | 'system' | 'tool';
+  /** 兼容旧字段：纯文本内容（新代码应使用 parts） */
   content: string;
+  /** 旧版：思考链文本（逐步迁移到 parts） */
   reasoning?: string;
-  /** assistant 消息中的工具调用 */
+  /** 消息部件数组（RikkaHub 风格） */
+  parts?: MessagePart[];
+  /** 旧版：assistant 消息中的工具调用（逐步迁移到 parts） */
   toolCalls?: ToolCall[];
   /** tool 角色消息关联的 tool_call_id */
   toolCallId?: string;

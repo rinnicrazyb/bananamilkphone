@@ -4,6 +4,7 @@ import { useChatStore } from '../store/chat-store';
 
 export default function ConversationList() {
   const conversations = useChatStore((s) => s.conversations);
+  const messages = useChatStore((s) => s.messages);
   const activeConversationId = useChatStore((s) => s.activeConversationId);
   const setActiveConversation = useChatStore((s) => s.setActiveConversation);
   const renameConversation = useChatStore((s) => s.renameConversation);
@@ -58,7 +59,23 @@ export default function ConversationList() {
         ? c.title.toLowerCase().includes(searchQuery.toLowerCase())
         : true
     )
-    .sort((a, b) => b.updatedAt - a.updatedAt);
+    .sort((a, b) => (b.updatedAt || getLastMsgTime(b.id)) - (a.updatedAt || getLastMsgTime(a.id)));
+
+  function getLastMsgTime(convId: string): number {
+    const msgs = messages[convId];
+    if (!msgs || msgs.length === 0) return 0;
+    return msgs[msgs.length - 1].timestamp;
+  }
+
+  function formatConvTime(convId: string): string {
+    const conv = agentConversations.find((c) => c.id === convId);
+    const lastTime = getLastMsgTime(convId);
+    const ts = lastTime > 0 ? lastTime : (conv?.createdAt ?? Date.now());
+    return new Date(ts).toLocaleDateString('zh-CN', {
+      month: 'short', day: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    });
+  }
 
   return (
     <div className="conv-panel">
@@ -112,12 +129,7 @@ export default function ConversationList() {
                 <span className="conv-item__title">{conv.title}</span>
               )}
               <span className="conv-item__time">
-                {new Date(conv.updatedAt).toLocaleDateString('zh-CN', {
-                  month: 'short',
-                  day: 'numeric',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })}
+                {formatConvTime(conv.id)}
               </span>
             </div>
             <div className="conv-item__actions">
