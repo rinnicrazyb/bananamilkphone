@@ -251,6 +251,8 @@ export default function ChatView() {
     const isNewMsg = windowMessages.length > prevLenRef.current;
     if (displayConfig.autoScroll !== false && (isNewMsg || isAtBottomRef.current)) {
       scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+      // 跳底后立即标记为底部，确保下一个流式 chunk 来时 isAtBottomRef 为 true
+      isAtBottomRef.current = true;
     }
     prevLenRef.current = windowMessages.length;
   }, [windowMessages, displayConfig.autoScroll]);
