@@ -846,6 +846,8 @@ body {
   overflow: hidden;
   position: relative;
   z-index: 1;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 .chat-page__header h1 {
@@ -1080,9 +1082,10 @@ body {
   gap: 8px;
   padding: 8px 12px;
   border-top: 1px solid var(--app-border);
-  background: var(--app-bg);
   position: relative;
   z-index: 1;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 .chat-input__plus {
