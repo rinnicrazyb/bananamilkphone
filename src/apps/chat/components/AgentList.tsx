@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom';
 import { useChatStore } from '../store/chat-store';
 import { CaretLeft } from '@phosphor-icons/react';
 import type { Agent } from '../types';
@@ -24,6 +25,7 @@ function formatLastContact(timestamp: number): string {
 }
 
 export default function AgentList() {
+  const navigate = useNavigate();
   const agents = useChatStore((s) => s.agents);
   const conversations = useChatStore((s) => s.conversations);
   const addAgent = useChatStore((s) => s.addAgent);
@@ -73,7 +75,7 @@ export default function AgentList() {
   return (
     <div className="chat-agent-list">
       <div className="chat-agent-list__header">
-        <button className="back-btn" onClick={() => window.history.back()}>
+        <button className="back-btn" onClick={() => navigate('/', { replace: true })}>
           <CaretLeft size={18} />
         </button>
         <h1>聊天</h1>

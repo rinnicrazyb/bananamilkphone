@@ -78,7 +78,7 @@ export default function LorebookListPage() {
   return (
     <div className="lorebook-page">
       <div className="lorebook-page__header">
-        <button className="theme-btn" onClick={() => navigate('/')}>
+        <button className="theme-btn" onClick={() => navigate('/', { replace: true })}>
           <CaretLeft size={18} />
         </button>
         <h1>世界书</h1>

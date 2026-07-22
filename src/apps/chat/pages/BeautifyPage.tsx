@@ -19,7 +19,8 @@ export default function BeautifyPage({ onBack }: BeautifyPageProps) {
 
   const conv = conversations.find((c) => c.id === activeConversationId);
   const agent = agents.find((a) => a.id === conv?.agentId);
-  const cfg = agent?.displayConfig ?? DEFAULT_DISPLAY_CONFIG;
+  // 合并默认值，确保旧数据中缺少的字段（如 autoScroll）也有值
+  const cfg = { ...DEFAULT_DISPLAY_CONFIG, ...(agent?.displayConfig ?? {}) };
 
   const [cropSrc, setCropSrc] = useState<string | null>(null);
   const pendingField = useRef<ImageField | null>(null);
@@ -104,7 +105,7 @@ export default function BeautifyPage({ onBack }: BeautifyPageProps) {
           <h2>显示选项</h2>
           {(['showAvatars', 'useBubbles', 'segmentBubbles', 'bubbleFollowAvatar', 'showTime', 'showTokens', 'showBranchArrows', 'showReasoningDuration', 'autoScroll'] as const).map((key) => (
             <label key={key} className="settings-field settings-field--row">
-              <span>{{ showAvatars: '显示头像', useBubbles: '使用气泡样式', segmentBubbles: '气泡按段分割', bubbleFollowAvatar: '气泡跟随头像', showTime: '显示消息时间', showTokens: '显示 Token 数', showBranchArrows: '显示分支箭头', showReasoningDuration: '显示推理耗时', autoScroll: 'AI 生成时自动滚动' }[key]}</span>
+              <span>{{ showAvatars: '显示头像', useBubbles: '使用气泡样式', segmentBubbles: '气泡按段分割', bubbleFollowAvatar: '气泡跟随头像', showTime: '显示消息时间', showTokens: '显示 Token 数', showBranchArrows: '显示分支箭头', showReasoningDuration: '显示推理耗时', autoScroll: 'AI生成时自动滚动到底部' }[key]}</span>
               <input type="checkbox" checked={cfg[key]} onChange={(e) => update({ [key]: e.target.checked } as Partial<AgentDisplayConfig>)} />
             </label>
           ))}

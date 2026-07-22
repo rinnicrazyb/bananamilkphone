@@ -73,7 +73,7 @@ export default function LorebookDetailPage() {
     return (
       <div className="lorebook-page">
         <div className="lorebook-page__header">
-          <button className="theme-btn" onClick={() => navigate('/lorebook')}>
+          <button className="theme-btn" onClick={() => navigate('/lorebook', { replace: true })}>
             <CaretLeft size={18} />
           </button>
           <h1>世界书未找到</h1>
@@ -165,7 +165,7 @@ export default function LorebookDetailPage() {
     >
       {/* 顶部导航 */}
       <div className="lorebook-detail__topbar">
-        <button className="theme-btn" onClick={() => navigate('/lorebook')}>
+        <button className="theme-btn" onClick={() => navigate('/lorebook', { replace: true })}>
           <CaretLeft size={18} />
         </button>
         <span className="lorebook-detail__page-num">

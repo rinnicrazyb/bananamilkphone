@@ -73,7 +73,7 @@ export default function ThemePage() {
   return (
     <div className="theme-page">
       <div className="theme-page__header">
-        <button className="back-btn" onClick={() => window.history.back()}>
+        <button className="back-btn" onClick={() => navigate('/', { replace: true })}>
           <CaretLeft size={18} />
         </button>
         <h1>主题</h1>
