@@ -243,13 +243,12 @@ export default function ChatView() {
   }, []);
 
   // ── 自动滚到底部 ──
-  const prevLenRef = useRef(windowMessages.length);
+  // ── 自动滚到底部（对齐 RikkaHub：监听消息内容变化而非仅长度）──
   useEffect(() => {
-    if (displayConfig.autoScroll !== false && windowMessages.length > prevLenRef.current && isAtBottomRef.current) {
-      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+    if (displayConfig.autoScroll !== false && isAtBottomRef.current) {
+      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
     }
-    prevLenRef.current = windowMessages.length;
-  }, [windowMessages.length, displayConfig.autoScroll]);
+  }, [windowMessages, displayConfig.autoScroll]);
 
   // 首次加载滚底
   useEffect(() => {
