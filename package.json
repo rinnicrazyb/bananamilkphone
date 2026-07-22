@@ -28,6 +28,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@phosphor-icons/react": "^2.1.10",
+    "highlight.js": "^11.11.1",
     "jeep-sqlite": "^2.8.0",
     "jszip": "^3.10.1",
     "react": "^19.2.7",

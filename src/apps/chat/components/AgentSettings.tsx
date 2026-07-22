@@ -26,7 +26,6 @@ export default function AgentSettingsPanel() {
   const [cropSrc, setCropSrc] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const llmPresets = useSettingsStore((s) => s.llmPresets);
-  const updateLLMConfig = useSettingsStore((s) => s.updateLLMConfig);
 
   const activeConv = conversations.find((c) => c.id === activeConversationId);
   const agent = agents.find((a) => a.id === activeConv?.agentId);
@@ -44,26 +43,38 @@ export default function AgentSettingsPanel() {
   const handleModelSelect = (val: string) => {
     if (val === '__custom__') {
       setCustomModel(true);
-      updateAgentSettings(agent.id, { model: '' });
+      updateAgentSettings(agent.id, { presetId: undefined, model: '' });
+    } else if (val === '') {
+      // 默认模型（全局配置）
+      setCustomModel(false);
+      updateAgentSettings(agent.id, { presetId: undefined, model: undefined, temperature: undefined, topP: undefined });
     } else if (val.startsWith('preset__')) {
       const presetId = val.replace('preset__', '');
       const preset = llmPresets.find((p) => p.id === presetId);
       if (preset) {
         setCustomModel(false);
-        updateLLMConfig({
-          baseUrl: preset.baseUrl,
-          apiKey: preset.apiKey,
+        // 将预设信息存入 agent settings（不影响全局配置）
+        updateAgentSettings(agent.id, {
+          presetId,
           model: preset.model,
           temperature: preset.temperature,
           topP: preset.topP,
+          ocrModel: preset.ocrModel || undefined,
+          tts: preset.ttsProvider || undefined,
         });
-        updateAgentSettings(agent.id, { model: preset.model });
       }
     } else {
       setCustomModel(false);
       updateAgentSettings(agent.id, { model: val || '' });
     }
   };
+
+  // select 的 value 逻辑：presetId 优先，其次 custom，最后默认
+  const selectValue = agent.settings.presetId
+    ? `preset__${agent.settings.presetId}`
+    : customModel
+      ? '__custom__'
+      : agent.settings.model || '';
 
   const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -129,7 +140,7 @@ export default function AgentSettingsPanel() {
           <label className="settings-field">
             <span>聊天模型</span>
             <select className="settings-select"
-              value={customModel ? '__custom__' : agent.settings.model || ''}
+              value={selectValue}
               onChange={(e) => handleModelSelect(e.target.value)}>
               <option value="">默认模型（设置APP中配置）</option>
               {llmPresets.length > 0 && <option disabled>─── API 预设 ───</option>}

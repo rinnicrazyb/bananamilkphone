@@ -19,6 +19,7 @@ import LauncherPage from './apps/launcher/pages/LauncherPage';
 import ThemePage from './apps/theme/pages/ThemePage';
 import AppIconsPage from './apps/theme/pages/AppIconsPage';
 import ChatPage from './apps/chat/pages/ChatPage';
+import ChatSearchPage from './apps/chat/pages/ChatSearchPage';
 import SettingsPage from './apps/settings/pages/SettingsPage';
 import { useAppStore } from './store/app-store';
 import { usePersistence } from './services/persistence/use-persistence';
@@ -40,6 +41,7 @@ function AppRoutes() {
       <Route path="/theme" element={<ThemePage />} />
       <Route path="/theme/app-icons" element={<AppIconsPage />} />
       <Route path="/chat" element={<ChatPage />} />
+      <Route path="/chat/search/:agentId" element={<ChatSearchPage />} />
       <Route path="/settings" element={<SettingsPage />} />
       <Route path="/lorebook" element={<LorebookListPage />} />
       <Route path="/lorebook/:id" element={<LorebookDetailPage />} />
@@ -173,7 +175,7 @@ export default function App() {
           if (convs.length === 0) continue;
 
           const conv = convs[0];
-          const msgs = state.messages[conv.id] || [];
+          const msgs = state.getCurrentMessages(conv.id);
           const unextracted = msgs.filter((m) => !m.memoryExtracted);
           if (unextracted.length === 0) continue;
 
@@ -198,10 +200,28 @@ export default function App() {
     return () => clearTimeout(timer);
   }, []);
 
-  // 通知服务初始化 + 消息事件监听
+  // 通知服务初始化 + 消息事件监听 + 后台任务通知
   useEffect(() => {
     import('./services/notification/index').then(({ initNotifications, notifyMessageReceived }) => {
       initNotifications();
+
+      // 监听后台任务完成（非活跃对话）
+      import('./services/background-task/index').then(({ taskManager }) => {
+        taskManager.subscribe((task, event) => {
+          if (event !== 'completed') return;
+          // 如果任务对应的对话不是当前活跃对话，推送通知
+          import('./apps/chat/store/chat-store').then(({ useChatStore }) => {
+            const activeId = useChatStore.getState().activeConversationId;
+            if (task.conversationId !== activeId) {
+              const conv = useChatStore.getState().conversations.find(c => c.id === task.conversationId);
+              const agent = useChatStore.getState().agents.find(a => a.id === task.agentId);
+              if (conv && agent) {
+                notifyMessageReceived(agent.name, '有新回复', `/chat`);
+              }
+            }
+          });
+        });
+      });
 
       // 监听 AI 回复完成事件
       import('./services/event-bus/index').then(({ eventBus }) => {

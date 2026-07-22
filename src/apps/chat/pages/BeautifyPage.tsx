@@ -102,9 +102,9 @@ export default function BeautifyPage({ onBack }: BeautifyPageProps) {
 
         <section className="settings-section">
           <h2>显示选项</h2>
-          {(['showAvatars', 'useBubbles', 'segmentBubbles', 'bubbleFollowAvatar', 'showTime', 'showTokens'] as const).map((key) => (
+          {(['showAvatars', 'useBubbles', 'segmentBubbles', 'bubbleFollowAvatar', 'showTime', 'showTokens', 'showBranchArrows', 'showReasoningDuration'] as const).map((key) => (
             <label key={key} className="settings-field settings-field--row">
-              <span>{{ showAvatars: '显示头像', useBubbles: '使用气泡样式', segmentBubbles: '气泡按段分割', bubbleFollowAvatar: '气泡跟随头像', showTime: '显示消息时间', showTokens: '显示 Token 数' }[key]}</span>
+              <span>{{ showAvatars: '显示头像', useBubbles: '使用气泡样式', segmentBubbles: '气泡按段分割', bubbleFollowAvatar: '气泡跟随头像', showTime: '显示消息时间', showTokens: '显示 Token 数', showBranchArrows: '显示分支箭头', showReasoningDuration: '显示推理耗时' }[key]}</span>
               <input type="checkbox" checked={cfg[key]} onChange={(e) => update({ [key]: e.target.checked } as Partial<AgentDisplayConfig>)} />
             </label>
           ))}

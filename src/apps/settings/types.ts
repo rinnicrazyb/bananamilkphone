@@ -65,7 +65,41 @@ export interface LLMPreset {
   model: string;
   temperature: number;
   topP: number;
+  /** TTS 配置（可选） */
+  ttsProvider?: string;
+  ttsApiKey?: string;
+  ttsModel?: string;
+  ttsVoice?: string;
+  /** OCR 配置（可选） */
+  ocrModel?: string;
+  ocrPrompt?: string;
 }
+
+/** TTS 全局配置 */
+export interface TTSConfig {
+  provider: string;
+  apiKey: string;
+  model: string;
+  voice: string;
+}
+
+/** OCR 全局配置 */
+export interface OCRConfig {
+  model: string;
+  prompt: string;
+}
+
+export const DEFAULT_TTS_CONFIG: TTSConfig = {
+  provider: '',
+  apiKey: '',
+  model: '',
+  voice: '',
+};
+
+export const DEFAULT_OCR_CONFIG: OCRConfig = {
+  model: '',
+  prompt: '',
+};
 
 /** 子页面类型 */
 export type SettingsSubPage =

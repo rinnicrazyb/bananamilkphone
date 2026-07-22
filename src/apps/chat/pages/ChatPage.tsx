@@ -5,7 +5,6 @@ import AgentList from '../components/AgentList';
 import ChatView from '../components/ChatView';
 import ChatInput from '../components/ChatInput';
 import ConversationList from '../components/ConversationList';
-import AgentSettingsPanel from '../components/AgentSettings';
 import FunctionBox from '../components/FunctionBox';
 import MemoryPage from './MemoryPage';
 import StubPage from './StubPage';
@@ -16,6 +15,7 @@ import InlineSearch from '../components/InlineSearch';
 import ChatSettingsPage from './ChatSettingsPage';
 import BeautifyPage from './BeautifyPage';
 import ContextPreviewPage from './ContextPreviewPage';
+import AgentSettingsPage from './AgentSettingsPage';
 
 type FuncPage = 'settings' | 'beautify' | 'context' | 'memory' | 'mcp' | 'websearch' | 'active' | 'thinking' | null;
 
@@ -43,6 +43,9 @@ export default function ChatPage() {
 
   const handleTouchEnd = useCallback(
     (e: React.TouchEvent) => {
+      // 代码块区域不触发右滑（防止在代码块内横向滚动时误触面板）
+      const target = e.target as HTMLElement;
+      if (target.closest('pre') || target.closest('code')) return;
       const dx = e.changedTouches[0].clientX - touchStartX.current;
       if (dx > 60 && !showConversationList) {
         toggleConversationList();
@@ -83,42 +86,16 @@ export default function ChatPage() {
           <div className="chat-page__header">
             {!showSearch ? (
               <>
-                <button
-                  className="back-btn"
-                  onClick={() => setActiveConversation(null)}
-                >
-                  ← 返回
-                </button>
+                <button className="back-btn" onClick={() => setActiveConversation(null)}>← 返回</button>
                 <h1>{currentAgent?.name ?? activeConv.title}</h1>
                 <div className="chat-page__header-right">
-                  <button
-                    className="chat-page__icon-btn"
-                    onClick={() => setShowSearch(true)}
-                    title="搜索"
-                  >
-                    <MagnifyingGlass size={20} />
-                  </button>
-                  <button
-                    className="chat-page__icon-btn"
-                    onClick={toggleConversationList}
-                    title="对话列表"
-                  >
-                    <List size={20} />
-                  </button>
-                  <button
-                    className="chat-page__icon-btn"
-                    onClick={() => setShowAgentSettings(true)}
-                    title="智能体设定"
-                  >
-                    <DotsThreeVertical size={20} />
-                  </button>
+                  <button className="chat-page__icon-btn" onClick={() => setShowSearch(true)} title="搜索"><MagnifyingGlass size={20} /></button>
+                  <button className="chat-page__icon-btn" onClick={toggleConversationList} title="对话列表"><List size={20} /></button>
+                  <button className="chat-page__icon-btn" onClick={() => setShowAgentSettings(true)} title="智能体设定"><DotsThreeVertical size={20} /></button>
                 </div>
               </>
             ) : (
-              <InlineSearch
-                conversationId={activeConv.id}
-                onClose={() => setShowSearch(false)}
-              />
+              <InlineSearch conversationId={activeConv.id} onClose={() => setShowSearch(false)} />
             )}
           </div>
           <ChatView />
@@ -133,7 +110,11 @@ export default function ChatPage() {
           </div>
         )}
 
-        {showAgentSettings && <AgentSettingsPanel />}
+        {showAgentSettings && (
+          <div className="funcpage-overlay">
+            <AgentSettingsPage onBack={() => setShowAgentSettings(false)} />
+          </div>
+        )}
 
         {showFunctionBox && (
           <FunctionBox onClose={() => setShowFunctionBox(false)} onSelect={handleFuncSelect} />

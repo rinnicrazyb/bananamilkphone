@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { useChatStore } from '../store/chat-store';
 import { useSendMessage } from '../../../hooks/use-send-message';
+import { isNative } from '../../../utils/platform';
 
 interface ChatInputProps {
   onPlusClick?: () => void;
@@ -14,6 +15,7 @@ export default function ChatInput({ onPlusClick }: ChatInputProps) {
   const updateAgentLastContact = useChatStore((s) => s.updateAgentLastContact);
   const { sendMessage, abort } = useSendMessage();
   const [sending, setSending] = useState(false);
+  const isMobile = isNative();
 
   const handleSend = async () => {
     const content = text.trim();
@@ -43,6 +45,9 @@ export default function ChatInput({ onPlusClick }: ChatInputProps) {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // 移动端：Enter 换行（默认 textarea 行为），不拦截
+    if (isMobile) return;
+    // 桌面端：Enter 发送，Shift+Enter 换行
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();

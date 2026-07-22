@@ -18,7 +18,7 @@ export default function MemoryPage({ onBack }: MemoryPageProps) {
   const agents = useChatStore((s) => s.agents);
   const allMemories = useChatStore((s) => s.memories);
   const rawMessages = useChatStore((s) =>
-    activeConversationId ? s.messages[activeConversationId] : []
+    activeConversationId ? s.getCurrentMessages(activeConversationId) : []
   );
   const updateMemory = useChatStore((s) => s.updateMemory);
   const deleteMemory = useChatStore((s) => s.deleteMemory);

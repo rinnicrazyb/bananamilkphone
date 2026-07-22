@@ -11,7 +11,7 @@
  *   - 所有文字连续渲染在一个气泡/块中
  */
 import { useMemo } from 'react';
-import { Lightning, Spinner, Check, Checks, Warning } from '@phosphor-icons/react';
+import { Lightning, Spinner, Check, Checks, Warning, Timer, ArrowLeft, ArrowRight } from '@phosphor-icons/react';
 import type { Message, MessagePart } from '../types';
 import MarkdownRenderer, { hasMarkdownOrHtml } from './MarkdownRenderer';
 import InteractiveHTML from './InteractiveHTML';
@@ -27,6 +27,8 @@ interface MessageRendererProps {
     bubbleFollowAvatar: boolean;
     showTime: boolean;
     showTokens: boolean;
+    showBranchArrows: boolean;
+    showReasoningDuration: boolean;
     userBubbleImage?: string;
     assistantBubbleImage?: string;
     userAvatarFrame?: string;
@@ -97,6 +99,7 @@ function renderSegmented(
   showAvatar: boolean, agentAvatar?: string, userAvatar?: string,
   status?: string, timestamp?: number, tokenCount?: { prompt: number; completion: number; cached?: number },
   autoCollapse?: boolean, showTokens?: boolean,
+  reasoningDuration?: number, showReasoningDuration?: boolean,
 ) {
   const groups = groupParts(parts);
   const elements: React.ReactNode[] = [];
@@ -172,6 +175,7 @@ function renderSegmented(
                       {!isAssistant && status && renderStatusIcon(status)}
                       {config.showTime && <span>{new Date(timestamp || Date.now()).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span>}
                       {showTokens && tokenCount && <span><Lightning size={11} />↑{tokenCount.prompt}/↓{tokenCount.completion}{tokenCount.cached ? <><Lightning size={11} />{tokenCount.cached}</> : ''}</span>}
+                      {showReasoningDuration && reasoningDuration && <span><Timer size={11} />{(reasoningDuration / 1000).toFixed(1)}s</span>}
                       {isAssistant && status && renderStatusIcon(status)}
                     </div>
                   )}
@@ -181,7 +185,7 @@ function renderSegmented(
           });
         } else {
           // 格式化内容（Markdown/HTML）→ 无气泡全宽，MarkdownRenderer 内部处理 html 代码块
-          elements.push(<div key={key} style={{ margin: '4px 0' }}><MarkdownRenderer content={part.content} /></div>);
+          elements.push(<div key={key} style={{ margin: '4px 0' }}><MarkdownRenderer content={part.content} isStreaming={status === 'sending'} /></div>);
         }
       }
     }
@@ -200,24 +204,80 @@ function renderStatusIcon(status: string) {
   );
 }
 
-function renderContinuous(parts: MessagePart[], config: MessageRendererProps['config'], isAssistant: boolean, toolResults?: Record<string, string>, status?: string, timestamp?: number, tokenCount?: { prompt: number; completion: number; cached?: number }, autoCollapse?: boolean, showTokens?: boolean) {
+function renderContinuous(parts: MessagePart[], config: MessageRendererProps['config'], isAssistant: boolean, toolResults?: Record<string, string>, status?: string, timestamp?: number, tokenCount?: { prompt: number; completion: number; cached?: number }, autoCollapse?: boolean, showTokens?: boolean, reasoningDuration?: number, showReasoningDuration?: boolean) {
+  const groups = groupParts(parts);
   const elements: React.ReactNode[] = [];
-  for (let i = 0; i < parts.length; i++) {
-    const part = parts[i];
-    if (part.type === 'reasoning') elements.push(<ReasoningBlock key={`reason-${i}`} content={part.content} isLoading={!part.finishedAt} autoCollapse={autoCollapse} />);
-    else if (part.type === 'tool_call') elements.push(<ChainOfThought key={`tool-${i}`} steps={[{ toolCallId: part.toolCallId, toolName: part.toolName, input: part.input, output: part.output, isExecuted: part.isExecuted ?? false }]} toolResults={toolResults} autoCollapse={autoCollapse} />);
-    else if (part.type === 'html') { elements.push(<InteractiveHTML key={`html-${i}`} html={part.content} />); }
-    else if (part.type === 'image') elements.push(<img key={`img-${i}`} src={part.url} alt="" style={{ maxWidth: '100%', borderRadius: 8, margin: '4px 0' }} />);
-    else if (part.type === 'text') {
-      elements.push(<MarkdownRenderer key={`text-${i}`} content={part.content} />);
+  let contentIdx = 0;
+
+  for (let gi = 0; gi < groups.length; gi++) {
+    const group = groups[gi];
+    if (group.type === 'thinking') {
+      const toolSteps = group.parts
+        .filter((p): p is MessagePart & { type: 'tool_call' } => p.type === 'tool_call')
+        .map((p) => ({ toolCallId: p.toolCallId, toolName: p.toolName, input: p.input, output: p.output, isExecuted: p.isExecuted ?? false }));
+      const reasoningParts = group.parts.filter((p) => p.type === 'reasoning');
+      elements.push(
+        <div key={`thinking-${gi}`} style={{ margin: '4px 0' }}>
+          {reasoningParts.map((rp, ri) => (
+            <ReasoningBlock key={`reason-${gi}-${ri}`} content={rp.content} isLoading={!rp.finishedAt} autoCollapse={autoCollapse} />
+          ))}
+          {toolSteps.length > 0 && <ChainOfThought steps={toolSteps} toolResults={toolResults} autoCollapse={autoCollapse} />}
+        </div>
+      );
+      continue;
+    }
+
+    // Content group: render each part individually
+    for (let pi = 0; pi < group.parts.length; pi++, contentIdx++) {
+      const part = group.parts[pi];
+      const key = `cont-${gi}-${pi}`;
+
+      if (part.type === 'image') {
+        elements.push(<div key={key} style={{ margin: '4px 0' }}><img src={part.url} alt="" style={{ maxWidth: '100%', borderRadius: 8 }} /></div>);
+        continue;
+      }
+      if (part.type === 'html') {
+        elements.push(<div key={key} style={{ margin: '4px 0' }}><InteractiveHTML html={part.content} /></div>);
+        continue;
+      }
+      if (part.type === 'text') {
+        const isFormatted = hasMarkdownOrHtml(part.content);
+        if (config.useBubbles && !isFormatted) {
+          // 纯文本 → 气泡
+          const bgStyle = isAssistant
+            ? config.assistantBubbleImage ? { backgroundImage: `url(${config.assistantBubbleImage})`, backgroundSize: 'cover' } : { background: 'var(--app-secondary)' }
+            : config.userBubbleImage ? { backgroundImage: `url(${config.userBubbleImage})`, backgroundSize: 'cover' } : { background: 'var(--app-primary)', color: '#fff' };
+          elements.push(
+            <div key={key} style={{ padding: '8px 12px', borderRadius: 12, maxWidth: '85%', width: 'fit-content', wordBreak: 'break-word', ...bgStyle, marginLeft: isAssistant ? undefined : 'auto', marginTop: 3, marginBottom: 3 }}>
+              {part.content}
+            </div>
+          );
+        } else {
+          // 格式化内容 → 全宽无气泡，TauriTavern 风格
+          elements.push(<div key={key} style={{ margin: '4px 0' }}><MarkdownRenderer content={part.content} isStreaming={status === 'sending'} /></div>);
+        }
+      }
     }
   }
-  if (config.useBubbles) {
-    const bgStyle = isAssistant
-      ? config.assistantBubbleImage ? { backgroundImage: `url(${config.assistantBubbleImage})`, backgroundSize: 'cover' } : { background: 'var(--app-secondary)' }
-      : config.userBubbleImage ? { backgroundImage: `url(${config.userBubbleImage})`, backgroundSize: 'cover' } : { background: 'var(--app-primary)', color: '#fff' };
-    return (<div style={{ padding: '8px 12px', borderRadius: 12, maxWidth: '85%', width: 'fit-content', ...bgStyle, marginLeft: isAssistant ? undefined : 'auto' }}>{elements}{(config.showTime || (showTokens && tokenCount)) && <div style={{ fontSize: 11, color: 'var(--app-text-secondary)', display: 'flex', alignItems: 'center', gap: 4, justifyContent: isAssistant ? 'flex-start' : 'flex-end', marginTop: 4 }}>{!isAssistant && status && renderStatusIcon(status)}{config.showTime && <span>{new Date(timestamp || Date.now()).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span>}{showTokens && tokenCount && <span><Lightning size={11} />↑{tokenCount.prompt}/↓{tokenCount.completion}{tokenCount.cached ? <><Lightning size={11} />{tokenCount.cached}</> : ''}</span>}{isAssistant && status && renderStatusIcon(status)}</div>}</div>);
+
+  // 时间/token 元信息
+  if ((config.showTime || (showTokens && tokenCount)) && elements.length > 0) {
+    elements.push(
+      <div key="meta" style={{
+        fontSize: 11, color: 'var(--app-text-secondary)',
+        display: 'flex', alignItems: 'center', gap: 4,
+        justifyContent: isAssistant ? 'flex-start' : 'flex-end',
+        padding: '2px 4px 0',
+      }}>
+        {!isAssistant && status && renderStatusIcon(status)}
+        {config.showTime && <span>{new Date(timestamp || Date.now()).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span>}
+        {showTokens && tokenCount && <span><Lightning size={11} />↑{tokenCount.prompt}/↓{tokenCount.completion}{tokenCount.cached ? <><Lightning size={11} />{tokenCount.cached}</> : ''}</span>}
+        {showReasoningDuration && reasoningDuration && <span><Timer size={11} />{(reasoningDuration / 1000).toFixed(1)}s</span>}
+        {isAssistant && status && renderStatusIcon(status)}
+      </div>
+    );
   }
+
   return <div style={{ marginTop: 4, marginBottom: 4 }}>{elements}</div>;
 }
 
@@ -227,8 +287,43 @@ export default function MessageRenderer(props: MessageRendererProps) {
   const { timestamp, tokenCount } = message;
   const autoCollapse = useChatStore((s) => s.thinkingChainCollapsed);
   const showTokens = config.showTokens as boolean | undefined;
+  const selectBranch = useChatStore((s) => s.selectBranch);
   if (config.segmentBubbles) {
-    return <>{renderSegmented(parts, config, isAssistant, toolResults, !!showAvatar, agentAvatar, userAvatar, message.status, timestamp, tokenCount, autoCollapse, showTokens)}</>;
+    return <>
+      {renderSegmented(parts, config, isAssistant, toolResults, !!showAvatar, agentAvatar, userAvatar, message.status, timestamp, tokenCount, autoCollapse, showTokens, message.reasoningDuration, config.showReasoningDuration)}
+      {message.branchTotal && message.branchTotal > 1 && config.showBranchArrows && message.branchNodeId && (
+        <div style={{ textAlign: 'center', padding: '4px 0', fontSize: 12, color: 'var(--app-text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+          <button
+            onClick={() => selectBranch(message.conversationId, message.branchNodeId!, (message.branchIndex || 0) - 1)}
+            disabled={(message.branchIndex || 0) <= 0}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--app-text-secondary)', padding: 2, display: 'flex', alignItems: 'center', opacity: (message.branchIndex || 0) <= 0 ? 0.3 : 1 }}
+          ><ArrowLeft size={14} /></button>
+          <span>{(message.branchIndex || 0) + 1} / {message.branchTotal}</span>
+          <button
+            onClick={() => selectBranch(message.conversationId, message.branchNodeId!, (message.branchIndex || 0) + 1)}
+            disabled={(message.branchIndex || 0) >= (message.branchTotal || 1) - 1}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--app-text-secondary)', padding: 2, display: 'flex', alignItems: 'center', opacity: (message.branchIndex || 0) >= (message.branchTotal || 1) - 1 ? 0.3 : 1 }}
+          ><ArrowRight size={14} /></button>
+        </div>
+      )}
+    </>;
   }
-  return <>{renderContinuous(parts, config, isAssistant, toolResults, message.status, timestamp, tokenCount, autoCollapse, showTokens)}</>;
+  return <>
+    {renderContinuous(parts, config, isAssistant, toolResults, message.status, timestamp, tokenCount, autoCollapse, showTokens, message.reasoningDuration, config.showReasoningDuration)}
+    {message.branchTotal && message.branchTotal > 1 && config.showBranchArrows && message.branchNodeId && (
+      <div style={{ textAlign: 'center', padding: '4px 0', fontSize: 12, color: 'var(--app-text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+        <button
+          onClick={() => selectBranch(message.conversationId, message.branchNodeId!, (message.branchIndex || 0) - 1)}
+          disabled={(message.branchIndex || 0) <= 0}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--app-text-secondary)', padding: 2, display: 'flex', alignItems: 'center', opacity: (message.branchIndex || 0) <= 0 ? 0.3 : 1 }}
+        ><ArrowLeft size={14} /></button>
+        <span>{(message.branchIndex || 0) + 1} / {message.branchTotal}</span>
+        <button
+          onClick={() => selectBranch(message.conversationId, message.branchNodeId!, (message.branchIndex || 0) + 1)}
+          disabled={(message.branchIndex || 0) >= (message.branchTotal || 1) - 1}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--app-text-secondary)', padding: 2, display: 'flex', alignItems: 'center', opacity: (message.branchIndex || 0) >= (message.branchTotal || 1) - 1 ? 0.3 : 1 }}
+        ><ArrowRight size={14} /></button>
+      </div>
+    )}
+  </>;
 }

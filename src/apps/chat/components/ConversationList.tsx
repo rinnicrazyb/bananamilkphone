@@ -1,10 +1,12 @@
 import { useState } from 'react';
-import { PencilSimple, Trash, X } from '@phosphor-icons/react';
+import { PencilSimple, Trash, X, MagnifyingGlass } from '@phosphor-icons/react';
+import { useNavigate } from 'react-router-dom';
 import { useChatStore } from '../store/chat-store';
 
 export default function ConversationList() {
+  const navigate = useNavigate();
   const conversations = useChatStore((s) => s.conversations);
-  const messages = useChatStore((s) => s.messages);
+  const getCurrentMessages = useChatStore((s) => s.getCurrentMessages);
   const activeConversationId = useChatStore((s) => s.activeConversationId);
   const setActiveConversation = useChatStore((s) => s.setActiveConversation);
   const renameConversation = useChatStore((s) => s.renameConversation);
@@ -62,7 +64,7 @@ export default function ConversationList() {
     .sort((a, b) => (b.updatedAt || getLastMsgTime(b.id)) - (a.updatedAt || getLastMsgTime(a.id)));
 
   function getLastMsgTime(convId: string): number {
-    const msgs = messages[convId];
+    const msgs = getCurrentMessages(convId);
     if (!msgs || msgs.length === 0) return 0;
     return msgs[msgs.length - 1].timestamp;
   }
@@ -81,9 +83,20 @@ export default function ConversationList() {
     <div className="conv-panel">
       <div className="conv-panel__header">
         <h2>对话列表</h2>
-        <button className="conv-panel__close" onClick={toggleConversationList}>
-          <X size={18} />
-        </button>
+        <div style={{ display: 'flex', gap: 4 }}>
+          {currentAgentId && (
+            <button
+              className="conv-panel__close"
+              onClick={() => { navigate(`/chat/search/${currentAgentId}`); toggleConversationList(); }}
+              title="搜索消息"
+            >
+              <MagnifyingGlass size={18} />
+            </button>
+          )}
+          <button className="conv-panel__close" onClick={toggleConversationList}>
+            <X size={18} />
+          </button>
+        </div>
       </div>
 
       <div className="conv-panel__search">

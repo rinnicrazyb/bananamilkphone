@@ -1,80 +1,101 @@
-import { useState } from 'react';
-import { MagnifyingGlass, CaretUp, CaretDown, X } from '@phosphor-icons/react';
-import { useChatStore } from '../store/chat-store';
+/**
+ * InlineSearch — 对话内搜索（替换顶栏）
+ *
+ * 对标 RikkaHub ChatListPreview：
+ * - 搜索当前对话的全部消息（SQLite）
+ * - 结果显示为卡片列表（片段+高亮+时间）
+ * - 点击跳转到目标消息位置
+ */
+import { useState, useEffect, useCallback } from 'react';
+import { MagnifyingGlass, X } from '@phosphor-icons/react';
+import { searchConversationMessages } from '../../../services/chat-message-db';
+import type { Message } from '../types';
+import HighlightedText, { scrollToMessage } from './HighlightedText';
 
-interface InlineSearchProps {
+interface Props {
   conversationId: string;
   onClose: () => void;
 }
 
-export default function InlineSearch({ conversationId, onClose }: InlineSearchProps) {
+export default function InlineSearch({ conversationId, onClose }: Props) {
   const [query, setQuery] = useState('');
-  // 稳定 selector：直接返回数组或 undefined，不创建新引用
-  const rawMessages = useChatStore((s) => s.messages[conversationId]);
-  const messages = rawMessages ?? [];
-  const [currentMatch, setCurrentMatch] = useState(0);
-  const [matches, setMatches] = useState<number[]>([]);
+  const [results, setResults] = useState<Message[]>([]);
+  const [searching, setSearching] = useState(false);
 
-  const handleSearch = (q: string) => {
-    setQuery(q);
+  const doSearch = useCallback(async (q: string) => {
     if (!q.trim()) {
-      setMatches([]);
-      setCurrentMatch(0);
+      setResults([]);
       return;
     }
-    const lower = q.toLowerCase();
-    const found: number[] = [];
-    messages.forEach((msg, idx) => {
-      if (msg.content.toLowerCase().includes(lower)) {
-        found.push(idx);
-      }
-    });
-    setMatches(found);
-    setCurrentMatch(found.length > 0 ? 0 : -1);
+    setSearching(true);
+    try {
+      const msgs = await searchConversationMessages(conversationId, q);
+      setResults(msgs);
+    } catch {
+      setResults([]);
+    } finally {
+      setSearching(false);
+    }
+  }, [conversationId]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => doSearch(query), 250);
+    return () => clearTimeout(timer);
+  }, [query, doSearch]);
+
+  const handleJump = (msgId: string) => {
+    onClose();
+    scrollToMessage(msgId);
   };
 
-  const goToMatch = (dir: 1 | -1) => {
-    if (matches.length === 0) return;
-    const next = (currentMatch + dir + matches.length) % matches.length;
-    setCurrentMatch(next);
-    const msgId = messages[matches[next]]?.id;
-    if (msgId) {
-      const el = document.getElementById(`msg-${msgId}`);
-      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
+  const formatTime = (ts: number) => {
+    const d = new Date(ts);
+    return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
   };
 
   return (
-    <div className="inline-search">
-      <div className="inline-search__input-wrap">
-        <span className="inline-search__icon"><MagnifyingGlass size={16} /></span>
-        <input
-          type="text"
-          className="inline-search__input"
-          placeholder="搜索本对话..."
-          value={query}
-          onChange={(e) => handleSearch(e.target.value)}
-          autoFocus
-        />
-        {matches.length > 0 && (
-          <span className="inline-search__count">
-            {currentMatch + 1}/{matches.length}
-          </span>
-        )}
-        {matches.length > 0 && (
-          <>
-            <button className="inline-search__nav" onClick={() => goToMatch(-1)}>
-              <CaretUp size={14} />
-            </button>
-            <button className="inline-search__nav" onClick={() => goToMatch(1)}>
-              <CaretDown size={14} />
-            </button>
-          </>
-        )}
+    <div style={{ width: '100%', display: 'flex', flexDirection: 'column' }}>
+      {/* 搜索栏 */}
+      <div className="inline-search">
+        <div className="inline-search__input-wrap">
+          <span className="inline-search__icon"><MagnifyingGlass size={14} /></span>
+          <input
+            className="inline-search__input"
+            placeholder="搜索本对话..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            autoFocus
+          />
+          {searching && (
+            <span style={{ fontSize: 10, color: 'var(--app-text-secondary)' }}>...</span>
+          )}
+        </div>
+        <button className="inline-search__close" onClick={onClose} title="关闭搜索">
+          <X size={16} />
+        </button>
       </div>
-      <button className="inline-search__close" onClick={onClose}>
-        <X size={16} />
-      </button>
+
+      {/* 结果卡片列表 */}
+      {results.length > 0 && (
+        <div className="inline-search__results">
+          {results.map((msg) => (
+            <div
+              key={msg.id}
+              className={`inline-search__card ${msg.role === 'user' ? 'inline-search__card--user' : ''}`}
+              onClick={() => handleJump(msg.id)}
+            >
+              <div className="inline-search__card-text">
+                <HighlightedText text={msg.content} query={query} maxLength={80} />
+              </div>
+              <div className="inline-search__card-time">{formatTime(msg.timestamp)}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {query.trim() && !searching && results.length === 0 && (
+        <div className="inline-search__empty">未找到匹配消息</div>
+      )}
     </div>
   );
 }

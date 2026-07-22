@@ -3,33 +3,78 @@ import { useAppStore } from '../../store/app-store';
 import { useChatStore } from '../../apps/chat/store/chat-store';
 import { useLorebookStore } from '../../apps/lorebook/store/lorebook-store';
 import { loadData, saveDataDebounced, saveDataImmediately } from './index';
+import { insertMessages, migrateFromBlob, hasMessageData } from '../chat-message-db';
+import { messagesToNodes, getCurrentMessages, getAllMessages } from '../message-nodes/index';
+import type { Message } from '../../apps/chat/types';
 
 /**
  * 数据持久化 Hook —— 在应用根组件中使用一次
- * 从 SQLite 加载数据注入 Zustand stores，并订阅变化写入
+ * 从 SQLite 加载 messageNodes 注入 Zustand，并订阅变化写入
  */
 export function usePersistence() {
   useEffect(() => {
-    // 从 SQLite 加载已保存的数据并注入 store
     loadData().then((persisted) => {
       if (!persisted) return;
-
       const state = useChatStore.getState();
-      state.setAgents(persisted.agents || []);
 
+      // 旧版 messages → messageNodes 迁移
+      if (persisted.messageNodes && Object.keys(persisted.messageNodes).length > 0) {
+        // 新格式：直接使用 messageNodes
+        useChatStore.setState({ messageNodes: persisted.messageNodes });
+
+        // ----------------------------------------------------------------
+        // 根治：同步 messages 兼容字段 + 补齐 messages 表
+        // ----------------------------------------------------------------
+        // 1) 同步 messages 兼容字段（loadInitialWindow / ContextPreviewPage 依赖此字段）
+        const syncedMsgs: Record<string, Message[]> = {};
+        for (const [cid, ns] of Object.entries(persisted.messageNodes)) {
+          syncedMsgs[cid] = getCurrentMessages(ns);
+        }
+        useChatStore.setState({ messages: syncedMsgs });
+
+        // 2) 补齐 SQLite messages 表（旧数据可能未经过双写，搜索/DB 查询会漏）
+        hasMessageData().then((exists) => {
+          if (!exists) {
+            const allMsgs: Message[] = [];
+            for (const ns of Object.values(persisted.messageNodes!)) {
+              allMsgs.push(...getAllMessages(ns));
+            }
+            if (allMsgs.length > 0) insertMessages(allMsgs).catch(() => {});
+          }
+        });
+      } else if (persisted.messages && Object.keys(persisted.messages).length > 0) {
+        // 旧格式：消息写 messages 表，转换 messageNodes
+        hasMessageData().then(exists => {
+          if (!exists) migrateFromBlob({ messages: persisted.messages as any });
+        });
+        // 转换 flat messages → MessageNode[]
+        const converted: Record<string, import('../../apps/chat/types').MessageNode[]> = {};
+        for (const [convId, msgs] of Object.entries(persisted.messages)) {
+          if (msgs && msgs.length > 0) {
+            converted[convId] = messagesToNodes(msgs as any[]);
+          }
+        }
+        if (Object.keys(converted).length > 0) {
+          useChatStore.setState({ messageNodes: converted });
+          // 同步 messages 兼容字段
+          const syncedLegacy: Record<string, Message[]> = {};
+          for (const [cid, ns] of Object.entries(converted)) {
+            syncedLegacy[cid] = getCurrentMessages(ns);
+          }
+          useChatStore.setState({ messages: syncedLegacy });
+        }
+      }
+
+      state.setAgents(persisted.agents || []);
       if (persisted.conversations?.length) {
         useChatStore.setState({ conversations: persisted.conversations });
       }
 
-      const mergedMessages = { ...state.messages, ...(persisted.messages || {}) };
-      const mergedMemories = { ...state.memories, ...(persisted.memories || {}) };
-      useChatStore.setState({ messages: mergedMessages, memories: mergedMemories });
+      useChatStore.setState({ memories: persisted.memories || {} });
 
       if (persisted.lorebooks?.length) {
         useLorebookStore.getState().setLorebooks(persisted.lorebooks);
       }
-
-      // restore desktop grid
       if (persisted.desktopGrid?.length) {
         useAppStore.setState({ desktopGrid: persisted.desktopGrid });
       }
@@ -37,40 +82,55 @@ export function usePersistence() {
       console.warn('[usePersistence] Load failed:', err);
     });
 
-    // 订阅 store 变化，带防抖写入 SQLite
+    // 订阅 store 变化，保存 messageNodes
     const unsubChat = useChatStore.subscribe(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (state: any) => {
+      () => {
+        const chatState = useChatStore.getState();
         const lorebookState = useLorebookStore.getState();
         const appState = useAppStore.getState();
-        saveDataDebounced(state.agents, state.conversations, state.messages, state.memories, lorebookState.lorebooks, appState.desktopGrid);
+        saveDataDebounced(
+          chatState.agents, chatState.conversations,
+          chatState.memories, lorebookState.lorebooks,
+          appState.desktopGrid, chatState.messageNodes
+        );
       }
     );
 
-    // 订阅世界书变化
     const unsubLorebook = useLorebookStore.subscribe(
-      (state) => {
+      () => {
         const chatState = useChatStore.getState();
+        const ls = useLorebookStore.getState();
         const appState = useAppStore.getState();
-        saveDataDebounced(chatState.agents, chatState.conversations, chatState.messages, chatState.memories, state.lorebooks, appState.desktopGrid);
+        saveDataDebounced(
+          chatState.agents, chatState.conversations,
+          chatState.memories, ls.lorebooks,
+          appState.desktopGrid, chatState.messageNodes
+        );
       }
     );
 
-    // 订阅桌面排序变化
     const unsubApp = useAppStore.subscribe(
-      (state) => {
+      () => {
         const chatState = useChatStore.getState();
-        const lorebookState = useLorebookStore.getState();
-        saveDataDebounced(chatState.agents, chatState.conversations, chatState.messages, chatState.memories, lorebookState.lorebooks, state.desktopGrid);
+        const ls = useLorebookStore.getState();
+        const as = useAppStore.getState();
+        saveDataDebounced(
+          chatState.agents, chatState.conversations,
+          chatState.memories, ls.lorebooks,
+          as.desktopGrid, chatState.messageNodes
+        );
       }
     );
 
-    // 页面关闭 / 刷新前立即保存
     const handleBeforeUnload = () => {
-      const state = useChatStore.getState();
+      const chatState = useChatStore.getState();
       const lorebookState = useLorebookStore.getState();
       const appState = useAppStore.getState();
-      saveDataImmediately(state.agents, state.conversations, state.messages, state.memories, lorebookState.lorebooks, appState.desktopGrid);
+      saveDataImmediately(
+        chatState.agents, chatState.conversations,
+        chatState.memories, lorebookState.lorebooks,
+        appState.desktopGrid, chatState.messageNodes
+      );
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
 
