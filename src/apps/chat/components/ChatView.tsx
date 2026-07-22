@@ -243,11 +243,16 @@ export default function ChatView() {
   }, []);
 
   // ── 自动滚到底部 ──
-  // ── 自动滚到底部（对齐 RikkaHub：监听消息内容变化而非仅长度）──
+  // ── 自动滚到底部（对齐 RikkaHub：两套机制）──
+  // 机制1：新增消息（length 增加）→ 无条件强制跳到底部（对齐 RikkaHub onSendClick）
+  // 机制2：流式更新（length 不变）→ 仅在底部时跟随滚动（对齐 RikkaHub isAtBottom 保护）
+  const prevLenRef = useRef(windowMessages.length);
   useEffect(() => {
-    if (displayConfig.autoScroll !== false && isAtBottomRef.current) {
+    const isNewMsg = windowMessages.length > prevLenRef.current;
+    if (displayConfig.autoScroll !== false && (isNewMsg || isAtBottomRef.current)) {
       scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
     }
+    prevLenRef.current = windowMessages.length;
   }, [windowMessages, displayConfig.autoScroll]);
 
   // 首次加载滚底
