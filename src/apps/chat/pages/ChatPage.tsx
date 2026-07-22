@@ -1,5 +1,5 @@
 import { useRef, useCallback, useState } from 'react';
-import { MagnifyingGlass, List, DotsThreeVertical } from '@phosphor-icons/react';
+import { MagnifyingGlass, List, DotsThreeVertical, CaretLeft } from '@phosphor-icons/react';
 import { useChatStore } from '../store/chat-store';
 import AgentList from '../components/AgentList';
 import ChatView from '../components/ChatView';
@@ -86,7 +86,7 @@ export default function ChatPage() {
           <div className="chat-page__header">
             {!showSearch ? (
               <>
-                <button className="back-btn" onClick={() => setActiveConversation(null)}>← 返回</button>
+                <button className="back-btn" onClick={() => setActiveConversation(null)}><CaretLeft size={18} /></button>
                 <h1>{currentAgent?.name ?? activeConv.title}</h1>
                 <div className="chat-page__header-right">
                   <button className="chat-page__icon-btn" onClick={() => setShowSearch(true)} title="搜索"><MagnifyingGlass size={20} /></button>

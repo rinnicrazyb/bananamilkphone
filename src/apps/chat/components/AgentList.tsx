@@ -74,7 +74,7 @@ export default function AgentList() {
     <div className="chat-agent-list">
       <div className="chat-agent-list__header">
         <button className="back-btn" onClick={() => window.history.back()}>
-          <CaretLeft size={18} /> 返回
+          <CaretLeft size={18} />
         </button>
         <h1>聊天</h1>
         {agents.length > 0 && (

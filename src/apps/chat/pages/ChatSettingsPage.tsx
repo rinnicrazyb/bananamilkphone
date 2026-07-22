@@ -43,7 +43,7 @@ export default function ChatSettingsPage({ onBack }: ChatSettingsPageProps) {
   return (
     <div className="func-fullpage">
       <div className="func-fullpage__header">
-        <button className="back-btn" onClick={onBack}><CaretLeft size={18} /> 返回</button>
+        <button className="back-btn" onClick={onBack}><CaretLeft size={18} /></button>
         <h1>聊天设置</h1>
       </div>
       <div className="func-fullpage__body">

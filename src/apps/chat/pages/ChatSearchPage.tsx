@@ -7,7 +7,7 @@
  * - 点击跳转到对应对话+消息位置
  */
 import { useState, useEffect, useCallback } from 'react';
-import { MagnifyingGlass, X } from '@phosphor-icons/react';
+import { MagnifyingGlass, X, CaretLeft } from '@phosphor-icons/react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useChatStore } from '../store/chat-store';
 import { searchAllMessages } from '../../../services/chat-message-db';
@@ -66,7 +66,7 @@ export default function ChatSearchPage() {
   return (
     <div className="func-fullpage">
       <div className="func-fullpage__header">
-        <button className="back-btn" onClick={() => navigate(-1)}>← 返回</button>
+        <button className="back-btn" onClick={() => navigate(-1)}><CaretLeft size={18} /></button>
         <h2>搜索消息</h2>
       </div>
       <div className="func-fullpage__body" style={{ padding: '12px 16px' }}>

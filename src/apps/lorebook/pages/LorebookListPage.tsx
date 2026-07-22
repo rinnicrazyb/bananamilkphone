@@ -7,7 +7,7 @@
  */
 import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BookOpenText, Plus, DownloadSimple, FileArrowUp } from '@phosphor-icons/react';
+import { BookOpenText, Plus, DownloadSimple, FileArrowUp, CaretLeft } from '@phosphor-icons/react';
 import { useLorebookStore } from '../store/lorebook-store';
 import { createDefaultLorebook } from '../types';
 import type { Lorebook } from '../types';
@@ -79,7 +79,7 @@ export default function LorebookListPage() {
     <div className="lorebook-page">
       <div className="lorebook-page__header">
         <button className="theme-btn" onClick={() => navigate('/')}>
-          ← 返回
+          <CaretLeft size={18} />
         </button>
         <h1>世界书</h1>
       </div>

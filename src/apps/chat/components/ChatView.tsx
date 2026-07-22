@@ -245,11 +245,11 @@ export default function ChatView() {
   // ── 自动滚到底部 ──
   const prevLenRef = useRef(windowMessages.length);
   useEffect(() => {
-    if (windowMessages.length > prevLenRef.current && isAtBottomRef.current) {
+    if (displayConfig.autoScroll !== false && windowMessages.length > prevLenRef.current && isAtBottomRef.current) {
       scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
     }
     prevLenRef.current = windowMessages.length;
-  }, [windowMessages.length]);
+  }, [windowMessages.length, displayConfig.autoScroll]);
 
   // 首次加载滚底
   useEffect(() => {

@@ -173,7 +173,7 @@ export default function ContextPreviewPage({ onBack }: Props) {
   return (
     <div className="func-fullpage">
       <div className="func-fullpage__header">
-        <button className="back-btn" onClick={onBack}><CaretLeft size={18} /> 返回</button><h1>上下文拼装</h1>
+        <button className="back-btn" onClick={onBack}><CaretLeft size={18} /></button><h1>上下文拼装</h1>
       </div>
       <div className="func-fullpage__body">
         <div className="context-summary">

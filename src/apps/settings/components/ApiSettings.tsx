@@ -306,7 +306,7 @@ export default function ApiSettings({ onBack }: Props) {
     <div className="settings-page">
       <div className="settings-page__header">
         <button className="back-btn" onClick={onBack}>
-          <CaretLeft size={18} /> 返回
+          <CaretLeft size={18} />
         </button>
         <h1>API 设置</h1>
       </div>

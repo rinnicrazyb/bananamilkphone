@@ -137,7 +137,7 @@ export default function SettingsPage() {
       {/* 顶栏 */}
       <div className="settings-page__header">
         <button className="back-btn" onClick={() => window.history.back()}>
-          <CaretLeft size={18} /> 返回
+          <CaretLeft size={18} />
         </button>
         <h1>设置</h1>
       </div>

@@ -18,6 +18,8 @@ export interface AgentDisplayConfig {
   showBranchArrows: boolean;
   /** 显示推理耗时 */
   showReasoningDuration: boolean;
+  /** AI生成时自动滚动到底部 */
+  autoScroll: boolean;
 
   /** 自定义气泡样式（data URL） */
   userBubbleImage?: string;
@@ -66,6 +68,7 @@ export const DEFAULT_DISPLAY_CONFIG: AgentDisplayConfig = {
   showTokens: false,
   showBranchArrows: true,
   showReasoningDuration: false,
+  autoScroll: true,
   enabledMCPServerIds: [],
   enabledSearchProviders: [],
   extractionKeywords: ['晚安', '记得', '我喜欢', '我讨厌', '最喜欢'],

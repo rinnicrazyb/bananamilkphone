@@ -4,7 +4,7 @@
  * Tidal Echo 风格：折叠态显示 "✦ thinking ✧" 居中标签
  * 展开后为主体居中的安静阅读区，与正文气泡视觉区分
  */
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 interface ReasoningBlockProps {
   content: string;
@@ -15,7 +15,20 @@ interface ReasoningBlockProps {
 }
 
 export default function ReasoningBlock({ content, isLoading, autoCollapse }: ReasoningBlockProps) {
-  const [open, setOpen] = useState(!autoCollapse);
+  // 流式过程中强制展开，结束后按 autoCollapse 决定是否折叠
+  const [open, setOpen] = useState(!autoCollapse || !!isLoading);
+  const prevLoadingRef = useRef(isLoading);
+
+  useEffect(() => {
+    if (prevLoadingRef.current && !isLoading) {
+      // isLoading 从 true→false：流式结束，按 autoCollapse 折叠
+      if (autoCollapse) setOpen(false);
+    } else if (!prevLoadingRef.current && isLoading) {
+      // isLoading 从 false→true：开始流式，强制展开
+      setOpen(true);
+    }
+    prevLoadingRef.current = isLoading;
+  }, [isLoading, autoCollapse]);
 
   if (!content) return null;
 

@@ -170,7 +170,7 @@ export default function MCPSettingsPage({ onBack }: Props) {
   return (
     <div className="settings-page">
       <div className="settings-page__header">
-        <button className="back-btn" onClick={onBack}><CaretLeft size={18} /> 返回</button>
+        <button className="back-btn" onClick={onBack}><CaretLeft size={18} /></button>
         <h1>MCP 服务器配置</h1>
         <button className="settings-header-btn" onClick={handleAdd} title="添加服务器">
           <Plus size={22} weight="bold" />
