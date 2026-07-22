@@ -844,7 +844,8 @@ body {
   border-bottom: 1px solid var(--app-border);
   min-width: 0;
   overflow: hidden;
-  background: var(--app-bg);
+  position: relative;
+  z-index: 1;
 }
 
 .chat-page__header h1 {
@@ -1080,6 +1081,8 @@ body {
   padding: 8px 12px;
   border-top: 1px solid var(--app-border);
   background: var(--app-bg);
+  position: relative;
+  z-index: 1;
 }
 
 .chat-input__plus {

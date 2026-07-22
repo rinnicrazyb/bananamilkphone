@@ -42,7 +42,7 @@ export default function ChatView() {
     return {
       backgroundImage: `url(${displayConfig.bgImage})`,
       backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat',
-      position: 'fixed' as const, inset: 0, zIndex: -1,
+      position: 'fixed' as const, inset: 0, zIndex: 0,
       opacity: displayConfig.bgOpacity ?? 1,
       filter: (displayConfig.bgBlur ?? 0) > 0 ? `blur(${displayConfig.bgBlur}px)` : undefined,
       pointerEvents: 'none',
