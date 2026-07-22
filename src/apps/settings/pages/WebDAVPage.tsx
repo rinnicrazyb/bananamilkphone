@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { CaretLeft, CloudArrowUp, CheckCircle, XCircle } from '@phosphor-icons/react';
 import { useSettingsStore } from '../../../store/settings-store';
 import { testConnection, listBackups, uploadBackup, downloadBackup, deleteBackup, type WebDAVFileInfo } from '../../../services/webdav/index';
-import { createBackup } from '../../../services/backup/index';
+import { createBackup, restoreFromZip } from '../../../services/backup/index';
 
 interface Props {
   onBack: () => void;
@@ -56,22 +56,19 @@ export default function WebDAVPage({ onBack }: Props) {
     setBusy(false);
   };
 
-  const handleDownload = async (file: WebDAVFileInfo) => {
+  const handleRestore = async (file: WebDAVFileInfo) => {
+    if (!window.confirm(`确定从 ${file.name} 恢复数据？当前数据将被覆盖，此操作不可撤销。`)) return;
     setResult(null);
     setBusy(true);
     try {
       const blob = await downloadBackup(webdavConfig, file.name);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = file.name;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      setResult({ ok: true, msg: `已下载 ${file.name}` });
+      const zipFile = new File([blob], file.name, { type: 'application/zip' });
+      const { restored } = await restoreFromZip(zipFile);
+      setResult({ ok: true, msg: `恢复成功！已还原：${restored.join('、')}\n即将重新加载…` });
+      // 恢复后重新加载页面，使 Zustand stores 从新 SQLite 重新读取数据（类 RikkaHub exitProcess(0)）
+      setTimeout(() => { window.location.reload(); }, 1500);
     } catch (err) {
-      setResult({ ok: false, msg: (err as Error).message });
+      setResult({ ok: false, msg: `恢复失败: ${(err as Error).message}` });
     }
     setBusy(false);
   };
@@ -93,7 +90,7 @@ export default function WebDAVPage({ onBack }: Props) {
   return (
     <div className="settings-page">
       <div className="settings-page__header">
-        <button className="back-btn" onClick={onBack}><CaretLeft size={18} /> 返回</button>
+        <button className="back-btn" onClick={onBack}><CaretLeft size={18} /></button>
         <h1>WebDAV 同步</h1>
       </div>
 
@@ -164,7 +161,7 @@ export default function WebDAVPage({ onBack }: Props) {
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 4 }}>
-                    <button className="theme-btn" onClick={() => handleDownload(file)} disabled={busy}>下载</button>
+                    <button className="theme-btn" onClick={() => handleRestore(file)} disabled={busy}>恢复</button>
                     <button className="theme-btn theme-btn--danger" onClick={() => handleDelete(file)} disabled={busy}>删除</button>
                   </div>
                 </div>

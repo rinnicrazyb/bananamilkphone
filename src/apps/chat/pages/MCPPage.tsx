@@ -31,7 +31,7 @@ export default function MCPPage({ onBack }: Props) {
   return (
     <div className="settings-page">
       <div className="settings-page__header">
-        <button className="back-btn" onClick={onBack}><CaretLeft size={18} /> 返回</button>
+        <button className="back-btn" onClick={onBack}><CaretLeft size={18} /></button>
         <h1>MCP 配置</h1>
       </div>
 

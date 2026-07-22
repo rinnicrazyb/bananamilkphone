@@ -9,6 +9,14 @@ export interface AppMeta {
   enabled: boolean;
 }
 
+/** APP 图标预设 */
+export interface IconPreset {
+  id: string;
+  name: string;
+  /** appId → dataUrl 映射 */
+  icons: Record<string, string>;
+}
+
 /** 主题配置 */
 export interface ThemeConfig {
   mode: 'light' | 'dark' | 'system';
@@ -17,6 +25,8 @@ export interface ThemeConfig {
   wallpaperOpacity: number;
   wallpaperBlur: number;
   fontFamily?: string;
+  /** TTF 字体文件的 dataURL，用于刷新后重新加载 FontFace */
+  fontData?: string;
 }
 
 /** 事件总线事件 */

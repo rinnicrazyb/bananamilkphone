@@ -1,19 +1,34 @@
 import { create } from 'zustand';
-import type { Agent, AgentSettings, AgentDisplayConfig, Conversation, Message, Memory } from '../types';
+import type { Agent, AgentSettings, AgentDisplayConfig, Conversation, Message, Memory, MessageNode } from '../types';
 import { DEFAULT_DISPLAY_CONFIG } from '../types';
+import { insertMessage as dbInsertMessage, updateMessage as dbUpdateMessage } from '../../../services/chat-message-db';
+import { getCurrentMessages, addNode, addBranchMessage } from '../../../services/message-nodes/index';
+
+function syncMsgs(mn: Record<string, MessageNode[]>): Record<string, Message[]> {
+  const r: Record<string, Message[]> = {};
+  for (const [k, v] of Object.entries(mn)) r[k] = getCurrentMessages(v);
+  return r;
+}
+function withMsgs(mn: Record<string, MessageNode[]>, convId: string, nodes: MessageNode[]) {
+  const full = { ...mn, [convId]: nodes };
+  return { messageNodes: full, messages: syncMsgs(full) };
+}
 
 interface ChatState {
   agents: Agent[];
   conversations: Conversation[];
+  messageNodes: Record<string, MessageNode[]>;
   messages: Record<string, Message[]>;
   activeConversationId: string | null;
   showConversationList: boolean;
   searchQuery: string;
   showAgentSettings: boolean;
-  thinkingChainCollapsed: boolean; // 默认自动折叠思考链
-  memories: Record<string, Memory[]>; // keyed by agentId
+  thinkingChainCollapsed: boolean;
+  memories: Record<string, Memory[]>;
 
-  // Actions
+  getCurrentMessages: (conversationId: string) => Message[];
+  getAllMessages: (conversationId: string) => Message[];
+
   setAgents: (agents: Agent[]) => void;
   addAgent: (agent: Agent) => void;
   addConversation: (conv: Conversation) => void;
@@ -34,15 +49,17 @@ interface ChatState {
   addMemory: (agentId: string, memory: Memory) => void;
   updateMemory: (agentId: string, memoryId: string, content: string) => void;
   deleteMemory: (agentId: string, memoryId: string) => void;
-  /** 批量添加记忆并标记消息已提取 */
   addMemories: (agentId: string, memories: Memory[], conversationId: string, messageIds: string[]) => void;
-  /** 标记多条消息已被提取 */
   markMessagesExtracted: (conversationId: string, messageIds: string[]) => void;
+  setMessageNodes: (conversationId: string, nodes: MessageNode[]) => void;
+  selectBranch: (conversationId: string, nodeId: string, newIndex: number) => void;
+  editMessageContent: (conversationId: string, msgId: string, newContent: string) => void;
 }
 
-export const useChatStore = create<ChatState>((set) => ({
+export const useChatStore = create<ChatState>((set, get) => ({
   agents: [],
   conversations: [],
+  messageNodes: {},
   messages: {},
   activeConversationId: null,
   showConversationList: false,
@@ -51,162 +68,119 @@ export const useChatStore = create<ChatState>((set) => ({
   thinkingChainCollapsed: true,
   memories: {},
 
-  setAgents: (agents) => set({ agents }),
+  getCurrentMessages: (convId) => getCurrentMessages(get().messageNodes[convId] || []),
+  getAllMessages: (convId) => (get().messageNodes[convId] || []).flatMap(n => n.messages),
 
-  addAgent: (agent) =>
-    set((state) => ({
-      agents: [...state.agents, agent],
-    })),
+  setMessageNodes: (convId, nodes) =>
+    set((s) => withMsgs(s.messageNodes, convId, nodes)),
+
+  setAgents: (agents) => set({ agents }),
+  addAgent: (agent) => set((s) => ({ agents: [...s.agents, agent] })),
 
   addConversation: (conv) =>
-    set((state) => ({
-      conversations: [conv, ...state.conversations],
-    })),
+    set((s) => ({ conversations: [conv, ...s.conversations] })),
 
   setActiveConversation: (id) =>
     set({ activeConversationId: id, showConversationList: false }),
 
-  addMessage: (conversationId, msg) =>
-    set((state) => {
-      const conversations = state.conversations.map((c) =>
-        c.id === conversationId ? { ...c, updatedAt: Date.now() } : c
-      );
-      return {
-        conversations,
-        messages: {
-          ...state.messages,
-          [conversationId]: [
-            ...(state.messages[conversationId] || []),
-            msg,
-          ],
-        },
-      };
+  addMessage: (convId, msg) =>
+    set((s) => {
+      const convs = s.conversations.map(c => c.id === convId ? { ...c, updatedAt: Date.now() } : c);
+      dbInsertMessage(msg).catch(e => console.warn('[chat-store] DB insert failed:', e));
+      const nodes = s.messageNodes[convId] || [];
+      const last = nodes[nodes.length - 1];
+      const sameRole = last && !msg.nodeId && last.role === msg.role && msg.role !== 'tool';
+      let newNodes: MessageNode[];
+      if (sameRole) {
+        newNodes = addBranchMessage(nodes, last.id, { ...msg, nodeId: last.id });
+      } else {
+        newNodes = addNode(nodes, { ...msg, nodeId: msg.nodeId || `node-${msg.id}` });
+      }
+      return { conversations: convs, ...withMsgs(s.messageNodes, convId, newNodes) };
     }),
 
   updateMessageStatus: (msgId, status) =>
-    set((state) => {
-      const newMessages = { ...state.messages };
-      for (const convId of Object.keys(newMessages)) {
-        newMessages[convId] = newMessages[convId].map((m) =>
-          m.id === msgId ? { ...m, status } : m
-        );
+    set((s) => {
+      const mn: Record<string, MessageNode[]> = {};
+      for (const [k, v] of Object.entries(s.messageNodes)) {
+        mn[k] = v.map(n => ({ ...n, messages: n.messages.map(m => m.id === msgId ? { ...m, status } : m) }));
       }
-      return { messages: newMessages };
+      dbUpdateMessage(msgId, { status }).catch(() => {});
+      return { messageNodes: mn, messages: syncMsgs(mn) };
     }),
 
   renameConversation: (id, title) =>
-    set((state) => ({
-      conversations: state.conversations.map((c) =>
-        c.id === id ? { ...c, title } : c
-      ),
-    })),
+    set((s) => ({ conversations: s.conversations.map(c => c.id === id ? { ...c, title } : c) })),
 
   deleteConversation: (id) =>
-    set((state) => {
-      const { [id]: _, ...remaining } = state.messages;
-      return {
-        conversations: state.conversations.filter((c) => c.id !== id),
-        messages: remaining,
-        activeConversationId:
-          state.activeConversationId === id ? null : state.activeConversationId,
-      };
+    set((s) => {
+      const { [id]: _, ...rest } = s.messageNodes;
+      return { conversations: s.conversations.filter(c => c.id !== id), messageNodes: rest, messages: syncMsgs(rest), activeConversationId: s.activeConversationId === id ? null : s.activeConversationId };
     }),
 
-  toggleConversationList: () =>
-    set((state) => ({
-      showConversationList: !state.showConversationList,
+  toggleConversationList: () => set((s) => ({ showConversationList: !s.showConversationList })),
+  setSearchQuery: (q) => set({ searchQuery: q }),
+
+  updateAgentSettings: (aid, setts) =>
+    set((s) => ({ agents: s.agents.map(a => a.id === aid ? { ...a, settings: { ...a.settings, ...setts } } : a) })),
+
+  updateAgent: (aid, data) =>
+    set((s) => ({ agents: s.agents.map(a => a.id === aid ? { ...a, ...data } : a) })),
+
+  updateAgentLastContact: (aid, ts) =>
+    set((s) => ({ agents: s.agents.map(a => a.id === aid ? { ...a, lastContactTime: ts } : a) })),
+
+  updateAgentDisplayConfig: (aid, cfg) =>
+    set((s) => ({
+      agents: s.agents.map(a => a.id === aid ? { ...a, displayConfig: { ...DEFAULT_DISPLAY_CONFIG, ...a.displayConfig, ...cfg } } : a),
     })),
 
-  setSearchQuery: (query) => set({ searchQuery: query }),
+  setShowAgentSettings: (v) => set({ showAgentSettings: v }),
+  setThinkingChainCollapsed: (v) => set({ thinkingChainCollapsed: v }),
 
-  updateAgentSettings: (agentId, settings) =>
-    set((state) => ({
-      agents: state.agents.map((a) =>
-        a.id === agentId
-          ? { ...a, settings: { ...a.settings, ...settings } }
-          : a
-      ),
+  setMemories: (aid, mems) => set((s) => ({ memories: { ...s.memories, [aid]: mems } })),
+  addMemory: (aid, mem) => set((s) => ({ memories: { ...s.memories, [aid]: [...(s.memories[aid] || []), mem] } })),
+  updateMemory: (aid, mid, c) =>
+    set((s) => ({ memories: { ...s.memories, [aid]: (s.memories[aid] || []).map(m => m.id === mid ? { ...m, content: c, updatedAt: Date.now() } : m) } })),
+  deleteMemory: (aid, mid) =>
+    set((s) => ({ memories: { ...s.memories, [aid]: (s.memories[aid] || []).filter(m => m.id !== mid) } })),
+
+  addMemories: (aid, mems, convId, mids) =>
+    set((s) => ({
+      memories: { ...s.memories, [aid]: [...(s.memories[aid] || []), ...mems] },
+      ...withMsgs(s.messageNodes, convId, (s.messageNodes[convId] || []).map(n => ({
+        ...n, messages: n.messages.map(m => mids.includes(m.id) ? { ...m, memoryExtracted: true } : m)
+      }))),
     })),
 
-  updateAgent: (agentId, data) =>
-    set((state) => ({
-      agents: state.agents.map((a) =>
-        a.id === agentId ? { ...a, ...data } : a
-      ),
-    })),
+  markMessagesExtracted: (convId, mids) =>
+    set((s) => withMsgs(s.messageNodes, convId, (s.messageNodes[convId] || []).map(n => ({
+      ...n, messages: n.messages.map(m => mids.includes(m.id) ? { ...m, memoryExtracted: true } : m)
+    })))),
 
-  updateAgentLastContact: (agentId, timestamp) =>
-    set((state) => ({
-      agents: state.agents.map((a) =>
-        a.id === agentId ? { ...a, lastContactTime: timestamp } : a
-      ),
-    })),
+  selectBranch: (convId, nodeId, newIdx) =>
+    set((s) => {
+      const nodes = s.messageNodes[convId] || [];
+      const target = nodes.find(n => n.id === nodeId);
+      if (!target) return s;
+      const clamped = Math.max(0, Math.min(newIdx, target.messages.length - 1));
+      return withMsgs(s.messageNodes, convId, nodes.map(n => n.id === nodeId ? { ...n, selectedIndex: clamped } : n));
+    }),
 
-  updateAgentDisplayConfig: (agentId, config) =>
-    set((state) => ({
-      agents: state.agents.map((a) =>
-        a.id === agentId
-          ? { ...a, displayConfig: { ...DEFAULT_DISPLAY_CONFIG, ...a.displayConfig, ...config } }
-          : a
-      ),
-    })),
-
-  setShowAgentSettings: (show) => set({ showAgentSettings: show }),
-
-  setThinkingChainCollapsed: (collapsed) => set({ thinkingChainCollapsed: collapsed }),
-
-  setMemories: (agentId, memories) =>
-    set((state) => ({
-      memories: { ...state.memories, [agentId]: memories },
-    })),
-
-  addMemory: (agentId, memory) =>
-    set((state) => ({
-      memories: {
-        ...state.memories,
-        [agentId]: [...(state.memories[agentId] || []), memory],
-      },
-    })),
-
-  updateMemory: (agentId, memoryId, content) =>
-    set((state) => ({
-      memories: {
-        ...state.memories,
-        [agentId]: (state.memories[agentId] || []).map((m) =>
-          m.id === memoryId ? { ...m, content, updatedAt: Date.now() } : m
-        ),
-      },
-    })),
-
-  deleteMemory: (agentId, memoryId) =>
-    set((state) => ({
-      memories: {
-        ...state.memories,
-        [agentId]: (state.memories[agentId] || []).filter((m) => m.id !== memoryId),
-      },
-    })),
-
-  addMemories: (agentId, memories, conversationId, messageIds) =>
-    set((state) => ({
-      memories: {
-        ...state.memories,
-        [agentId]: [...(state.memories[agentId] || []), ...memories],
-      },
-      messages: {
-        ...state.messages,
-        [conversationId]: (state.messages[conversationId] || []).map((m) =>
-          messageIds.includes(m.id) ? { ...m, memoryExtracted: true } : m
-        ),
-      },
-    })),
-
-  markMessagesExtracted: (conversationId, messageIds) =>
-    set((state) => ({
-      messages: {
-        ...state.messages,
-        [conversationId]: (state.messages[conversationId] || []).map((m) =>
-          messageIds.includes(m.id) ? { ...m, memoryExtracted: true } : m
-        ),
-      },
-    })),
+  editMessageContent: (convId, msgId, newContent) =>
+    set((s) => {
+      let found = false;
+      const updated = (s.messageNodes[convId] || []).map(n => {
+        const ti = n.messages.findIndex(m => m.id === msgId);
+        if (ti < 0) return n;
+        found = true;
+        return {
+          ...n,
+          messages: [...n.messages, { ...n.messages[ti], id: `${msgId}-edit-${Date.now()}`, content: newContent, parts: undefined, timestamp: Date.now() }],
+          selectedIndex: n.messages.length,
+        };
+      });
+      if (!found) return s;
+      return withMsgs(s.messageNodes, convId, updated);
+    }),
 }));

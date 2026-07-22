@@ -1,4 +1,6 @@
 apply plugin: 'com.android.application'
+apply plugin: 'kotlin-android'
+apply plugin: 'org.jetbrains.kotlin.plugin.serialization'
 
 android {
     namespace = "com.bananamilkphone.app"
@@ -36,6 +38,12 @@ dependencies {
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation project(':capacitor-android')
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    // Kotlin MCP SDK + Ktor（对齐 RikkaHub libs.versions.toml）
+    implementation 'io.modelcontextprotocol:kotlin-sdk:0.14.0'
+    implementation 'io.ktor:ktor-client-okhttp:3.4.3'
+    implementation 'io.ktor:ktor-client-content-negotiation:3.4.3'
+    implementation 'io.ktor:ktor-serialization-kotlinx-json:3.4.3'
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"

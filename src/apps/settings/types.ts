@@ -28,6 +28,12 @@ export interface MCPServer {
   lastError?: string;
   /** 连接后通过 tools/list 发现的工具 */
   discoveredTools: MCPDiscoveredTool[];
+  /** 连接超时（毫秒，默认 30000） */
+  timeout?: number;
+  /** 重试次数（默认 5） */
+  retryCount?: number;
+  /** 自动重连开关（默认 true） */
+  autoReconnect?: boolean;
 }
 
 /** 搜索供应商配置 */
@@ -59,7 +65,41 @@ export interface LLMPreset {
   model: string;
   temperature: number;
   topP: number;
+  /** TTS 配置（可选） */
+  ttsProvider?: string;
+  ttsApiKey?: string;
+  ttsModel?: string;
+  ttsVoice?: string;
+  /** OCR 配置（可选） */
+  ocrModel?: string;
+  ocrPrompt?: string;
 }
+
+/** TTS 全局配置 */
+export interface TTSConfig {
+  provider: string;
+  apiKey: string;
+  model: string;
+  voice: string;
+}
+
+/** OCR 全局配置 */
+export interface OCRConfig {
+  model: string;
+  prompt: string;
+}
+
+export const DEFAULT_TTS_CONFIG: TTSConfig = {
+  provider: '',
+  apiKey: '',
+  model: '',
+  voice: '',
+};
+
+export const DEFAULT_OCR_CONFIG: OCRConfig = {
+  model: '',
+  prompt: '',
+};
 
 /** 子页面类型 */
 export type SettingsSubPage =
@@ -77,6 +117,8 @@ export interface WebDAVConfig {
   username: string;
   password: string;
   remotePath: string;
+  /** 请求超时（毫秒，默认 60000） */
+  timeout?: number;
 }
 
 export const DEFAULT_WEBDAV_CONFIG: WebDAVConfig = {

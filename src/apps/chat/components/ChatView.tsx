@@ -1,262 +1,282 @@
-import { Spinner, Check, Checks, Warning, Lightning } from '@phosphor-icons/react';
-import { useRef, useEffect, useMemo, useCallback } from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
+/**
+ * ChatView — 窗口化聊天消息列表
+ *
+ * 数据源：chat-message-db（SQLite messages 表，按需分页）
+ * 渲染策略：始终只渲染窗口内的 ~100 条消息；滚顶加载更早的消息；
+ *           新消息到达时追加到窗口尾部并自动滚底
+ *
+ * DOM 节点数始终由窗口大小控制，iframe 不被回收，无虚拟滚动。
+ */
+import { useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import { useChatStore } from '../store/chat-store';
-import type { Message } from '../types';
+import type { Message, MessageNode } from '../types';
 import { DEFAULT_DISPLAY_CONFIG } from '../types';
-import AgentAvatar from './AgentAvatar';
-import ToolCard from './ToolCard';
+import MessageRenderer from './MessageRenderer';
+import MessageContextMenu from './MessageContextMenu';
+import MessageEditDrawer from './MessageEditDrawer';
+import ExportDrawer from './ExportDrawer';
+import { regenerateMessage } from '../../../services/chat-send/index';
+import { sendMessage as resendMessage } from '../../../services/chat-send/index';
+import { getCurrentMessages } from '../../../services/message-nodes/index';
+import {
+  getWindowMessages,
+  getMessageCount,
+  deleteMessage as dbDeleteMessage,
+} from '../../../services/chat-message-db';
 
-function MessageBubble({ msg, thinkingCollapsed, agentAvatar, displayConfig, isLastInRound, showAvatar }: {
-  msg: Message; thinkingCollapsed: boolean; agentAvatar: string;
-  displayConfig: typeof DEFAULT_DISPLAY_CONFIG; isLastInRound?: boolean; showAvatar?: boolean;
-}) {
-  const bubbleImg = msg.role === 'user' ? displayConfig.userBubbleImage : displayConfig.assistantBubbleImage;
-  const useBubbleImg = displayConfig.useBubbles && bubbleImg;
-  const noBubble = msg.role === 'assistant' && !displayConfig.useBubbles;
-  const bubbleStyle: React.CSSProperties = useBubbleImg ? {
-    backgroundImage: `url(${bubbleImg})`,
-    backgroundSize: '100% 100%',
-    backgroundRepeat: 'no-repeat',
-    backgroundColor: 'transparent',
-    border: 'none',
-    padding: '14px 18px',
-  } : {};
-
-  const showAvatarHere = showAvatar ?? true;
-
-  return (
-    <div className={`chat-bubble-row chat-bubble-row--${msg.role}`}>
-      {displayConfig.showAvatars && showAvatarHere && msg.role === 'assistant' && (
-        <div className="chat-bubble__avatar chat-bubble__avatar--assistant">
-          <AgentAvatar avatar={agentAvatar} className="chat-bubble__avatar-img" frameSrc={displayConfig.agentAvatarFrame} />
-        </div>
-      )}
-      {displayConfig.showAvatars && showAvatarHere && msg.role === 'user' && (
-        <div className="chat-bubble__avatar chat-bubble__avatar--user" style={{ order: 1 }}>
-          <div className="chat-bubble__avatar-img" style={{ fontSize: 18, position: 'relative' }}>
-            {displayConfig.userAvatar ? (
-              <img src={displayConfig.userAvatar} alt="用户头像" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
-            ) : (
-              <div className="chat-bubble__avatar-blank" />
-            )}
-            {displayConfig.userAvatarFrame && (
-              <img src={displayConfig.userAvatarFrame} alt="头像框" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }} />
-            )}
-          </div>
-        </div>
-      )}
-      <div
-        id={`msg-${msg.id}`}
-        className={`chat-bubble chat-bubble--${msg.role}${useBubbleImg ? ' chat-bubble--custom-img' : ''}${noBubble ? ' chat-bubble--no-bg' : ''}`}
-        style={bubbleStyle}
-      >
-        {msg.reasoning && (
-          <details className="chat-bubble__reasoning" open={!thinkingCollapsed}>
-            <summary>思考链</summary>
-            <pre>{msg.reasoning}</pre>
-          </details>
-        )}
-        <div className="chat-bubble__content">{msg.content}</div>
-        <div className="chat-bubble__meta">
-          {displayConfig.showTime && (
-            <span className="chat-bubble__time">
-              {new Date(msg.timestamp).toLocaleTimeString('zh-CN', {
-                hour: '2-digit',
-                minute: '2-digit',
-              })}
-            </span>
-          )}
-          {msg.role === 'user' && (
-            <span className={`chat-bubble__status chat-bubble__status--${msg.status}`}>
-              {msg.status === 'sending' ? <Spinner size={14} className="spin" /> : msg.status === 'sent' ? <Check size={14} /> : msg.status === 'read' ? <Checks size={14} /> : <Warning size={14} />}
-            </span>
-          )}
-          {msg.role === 'assistant' && (
-            <span className={`chat-bubble__status chat-bubble__status--${msg.status}`}>
-              {msg.status === 'sending' ? <Spinner size={14} className="spin" /> : msg.status === 'sent' ? <Check size={14} /> : <Warning size={14} />}
-            </span>
-          )}
-          {displayConfig.showTokens && msg.tokenCount && isLastInRound && (
-            <span className="chat-bubble__time" style={{ marginLeft: 4 }}>
-              ↑{msg.tokenCount.prompt}/↓{msg.tokenCount.completion}{msg.tokenCount.cached ? <> <Lightning size={12} />{msg.tokenCount.cached}</> : ''}
-            </span>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/** 按段分割渲染：将 assistant 消息按 \\n{2,} 切分成多个独立气泡 */
-function SegmentedMessageBubble({ msg, thinkingCollapsed, agentAvatar, displayConfig, isLastInRound }: {
-  msg: Message; thinkingCollapsed: boolean; agentAvatar: string;
-  displayConfig: typeof DEFAULT_DISPLAY_CONFIG; isLastInRound?: boolean;
-}) {
-  const segments = msg.content.split(/\n{2,}/).filter(Boolean);
-  const bubbleFollow = displayConfig.bubbleFollowAvatar;
-  const avatarWidth = 36;
-  const bubbleImg = displayConfig.assistantBubbleImage;
-  const useBubbleImg = displayConfig.useBubbles && bubbleImg;
-  const bubbleStyle: React.CSSProperties = useBubbleImg ? {
-    backgroundImage: `url(${bubbleImg})`,
-    backgroundSize: '100% 100%',
-    backgroundRepeat: 'no-repeat',
-    backgroundColor: 'transparent',
-    border: 'none',
-    padding: '14px 18px',
-  } : {};
-
-  return (
-    <>
-      {/* 思考链：用空白占位保持与正文左侧对齐 */}
-      {msg.reasoning && (
-        <div className="chat-bubble-row" style={{ alignItems: 'flex-start' }}>
-          {displayConfig.showAvatars && (
-            <div style={{ width: avatarWidth, height: avatarWidth, flexShrink: 0 }} />
-          )}
-          <details className="chat-bubble__reasoning chat-bubble__reasoning--standalone" open={!thinkingCollapsed} style={{ marginLeft: 0, maxWidth: '85%' }}>
-            <summary>思考链</summary>
-            <pre>{msg.reasoning}</pre>
-          </details>
-        </div>
-      )}
-      {/* 分段气泡 */}
-      {segments.map((seg, i) => (
-        <div key={i} className="chat-bubble-row chat-bubble-row--assistant">
-          {displayConfig.showAvatars && (bubbleFollow ? true : i === 0) ? (
-            <div className="chat-bubble__avatar chat-bubble__avatar--assistant">
-              <AgentAvatar avatar={agentAvatar} className="chat-bubble__avatar-img" frameSrc={displayConfig.agentAvatarFrame} />
-            </div>
-          ) : displayConfig.showAvatars ? (
-            <div style={{ width: avatarWidth, flexShrink: 0 }} />
-          ) : null}
-          <div
-            className={`chat-bubble chat-bubble--assistant${!displayConfig.useBubbles ? ' chat-bubble--no-bg' : ''}${useBubbleImg ? ' chat-bubble--custom-img' : ''}`}
-            style={bubbleStyle}
-          >
-            <div className="chat-bubble__content">{seg}</div>
-            <div className="chat-bubble__meta">
-              {displayConfig.showTime && i === segments.length - 1 && (
-                <span className="chat-bubble__time">
-                  {new Date(msg.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
-                </span>
-              )}
-              {i === segments.length - 1 && (
-                <span className="chat-bubble__status">
-                  {msg.status === 'sending' ? <Spinner size={14} className="spin" /> : msg.status === 'sent' ? <Check size={14} /> : <Warning size={14} />}
-                </span>
-              )}
-              {displayConfig.showTokens && msg.tokenCount && isLastInRound && i === segments.length - 1 && (
-                <span className="chat-bubble__time" style={{ marginLeft: 4 }}>
-                  ↑{msg.tokenCount.prompt}/↓{msg.tokenCount.completion}{msg.tokenCount.cached ? <> <Lightning size={12} />{msg.tokenCount.cached}</> : ''}
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-      ))}
-    </>
-  );
-}
+const INITIAL_WINDOW = 80;
+const LOAD_MORE = 50;
+const SCROLL_BOTTOM_THRESHOLD = 100;
 
 export default function ChatView() {
   const activeConversationId = useChatStore((s) => s.activeConversationId);
-  const rawMessages = useChatStore((s) =>
-    activeConversationId ? s.messages[activeConversationId] : undefined
-  );
-  const messages = rawMessages ?? ([] as Message[]);
-  const thinkingCollapsed = useChatStore((s) => s.thinkingChainCollapsed);
   const conversations = useChatStore((s) => s.conversations);
   const agents = useChatStore((s) => s.agents);
   const activeConv = conversations.find((c) => c.id === activeConversationId);
   const currentAgent = agents.find((a) => a.id === activeConv?.agentId);
   const displayConfig = currentAgent?.displayConfig ?? DEFAULT_DISPLAY_CONFIG;
 
+  // ── 背景 ──
   const bgFixedStyle: React.CSSProperties | null = useMemo(() => {
     if (!displayConfig.bgImage) return null;
-    const blur = displayConfig.bgBlur ?? 0;
-    const opacity = displayConfig.bgOpacity ?? 1;
     return {
       backgroundImage: `url(${displayConfig.bgImage})`,
-      backgroundSize: 'cover',
-      backgroundPosition: 'center',
-      backgroundRepeat: 'no-repeat',
-      position: 'fixed' as const,
-      inset: 0,
-      zIndex: 0,
-      opacity,
-      filter: blur > 0 ? `blur(${blur}px)` : undefined,
+      backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat',
+      position: 'fixed' as const, inset: 0, zIndex: 0,
+      opacity: displayConfig.bgOpacity ?? 1,
+      filter: (displayConfig.bgBlur ?? 0) > 0 ? `blur(${displayConfig.bgBlur}px)` : undefined,
       pointerEvents: 'none',
     };
   }, [displayConfig.bgImage, displayConfig.bgOpacity, displayConfig.bgBlur]);
 
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const sentinelRef = useRef<HTMLDivElement>(null);
+  // ── 窗口状态 ──
+  const [windowMessages, setWindowMessages] = useState<Message[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
   const loadingRef = useRef(false);
 
-  const sorted = useMemo(
-    () => [...messages].sort((a, b) => a.timestamp - b.timestamp),
-    [messages]
-  );
+  // DOM refs
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const topSentinelRef = useRef<HTMLDivElement>(null);
+  const isAtBottomRef = useRef(true);
+  const prevTotalRef = useRef(0);
 
-  // 过滤掉 role:tool 的消息（它们会内嵌在 ToolCard 中显示）
-  const displayMessages = useMemo(
-    () => sorted.filter((m) => m.role !== 'tool'),
-    [sorted]
-  );
+  // ── 消息操作状态 ──
+  const [editMsg, setEditMsg] = useState<{ id: string; content: string; resend?: boolean } | null>(null);
+  const [copyMsg, setCopyMsg] = useState<{ id: string; content: string } | null>(null);
+  const [showExport, setShowExport] = useState(false);
 
-  // 构建 tool 结果映射: tool_call_id → content
-  const toolResults = useMemo(() => {
-    const map: Record<string, string> = {};
-    for (const m of sorted) {
-      if (m.role === 'tool' && m.toolCallId) {
-        map[m.toolCallId] = m.content;
-      }
+  const getMenuActions = useCallback((msg: Message) => {
+    const acts: Array<{ label: string; icon: string; onClick: () => void; danger?: boolean }> = [
+      { label: '复制', icon: 'Copy', onClick: () => setCopyMsg({ id: msg.id, content: msg.content }) },
+    ];
+    if (msg.role === 'user') {
+      acts.push({ label: '重新发送', icon: 'PaperPlaneTilt', onClick: () => {
+        // 打开编辑窗口，标注为重新发送（保存时触发 LLM 调用）
+        setEditMsg({ id: msg.id, content: msg.content, resend: true });
+      }});
     }
-    return map;
-  }, [sorted]);
+    if (msg.role === 'assistant') {
+      acts.push({ label: '重新生成', icon: 'ArrowsClockwise', onClick: () => {
+        if (!activeConversationId) return;
+        regenerateMessage(activeConversationId, msg.id).catch(() => {});
+      }});
+    }
+    acts.push(
+      { label: '编辑', icon: 'PencilSimple', onClick: () => setEditMsg({ id: msg.id, content: msg.content }) },
+      { label: '导出', icon: 'DownloadSimple', onClick: () => setShowExport(true) },
+      { label: '删除', icon: 'Trash', onClick: () => {
+        if (!activeConversationId) return;
+        if (window.confirm('确定删除这条消息？')) {
+          // 从 messageNodes 和 db 中删除
+          useChatStore.setState((s) => {
+            const nodes = s.messageNodes[activeConversationId] || [];
+            const newNodes = nodes
+              .map(n => {
+                const filtered = n.messages.filter(m => m.id !== msg.id);
+                return filtered.length > 0 ? { ...n, messages: filtered, selectedIndex: Math.min(n.selectedIndex, filtered.length - 1) } : null;
+              })
+              .filter(Boolean) as MessageNode[];
+            const full = { ...s.messageNodes, [activeConversationId]: newNodes };
+            const newMsgs: Record<string, Message[]> = {};
+            for (const [k, v] of Object.entries(full)) newMsgs[k] = getCurrentMessages(v);
+            return { messageNodes: full, messages: newMsgs };
+          });
+          dbDeleteMessage(msg.id).catch(() => {});
+          setWindowMessages(prev => prev.filter(m => m.id !== msg.id));
+        }
+      }, danger: true },
+    );
+    return acts;
+  }, [activeConversationId]);
 
-  const virtualizer = useVirtualizer({
-    count: displayMessages.length,
-    getScrollElement: () => scrollRef.current,
-    estimateSize: () => 80,
-    overscan: 10,
-  });
+  // ── 初始加载 / 对话切换 ──
+  const loadInitialWindow = useCallback(async (convId: string) => {
+    // 优先从 store 读取（即时可用），DB 作为补充
+    const storeMsgs = useChatStore.getState().messages[convId] || [];
+    const storeSorted = [...storeMsgs].sort((a, b) => a.timestamp - b.timestamp).filter(m => m.role !== 'tool');
 
-  // Infinite scroll: IntersectionObserver on top sentinel
-  const handleLoadMore = useCallback(() => {
-    if (loadingRef.current) return;
-    loadingRef.current = true;
-    console.log('[ChatView] Load more messages (stub)');
-    setTimeout(() => { loadingRef.current = false; }, 500);
+    if (storeSorted.length > 0) {
+      // 从 store 加载最近 INITIAL_WINDOW 条
+      const sliced = storeSorted.slice(-INITIAL_WINDOW);
+      setWindowMessages(sliced);
+      setTotal(storeSorted.length);
+      prevTotalRef.current = storeSorted.length;
+      // 异步同步到 messages 表
+      import('../../../services/chat-message-db').then(({ getMessageCount }) => {
+        getMessageCount(convId).then(dbCount => {
+          if (dbCount < storeSorted.length) {
+            // DB 落后，触发补充写入
+            import('../../../services/chat-message-db').then(({ insertMessages }) => {
+              insertMessages(storeMsgs).catch(() => {});
+            });
+          }
+        });
+      });
+      return;
+    }
+
+    // store 为空，尝试 DB
+    const totalCount = await getMessageCount(convId);
+    setTotal(totalCount);
+    prevTotalRef.current = totalCount;
+
+    if (totalCount === 0) {
+      // 检查 await 期间是否已被 syncFromStore 更新（用户发送了消息）
+      const currentMsgs = useChatStore.getState().messages[convId] || [];
+      if (currentMsgs.length > 0) return;
+      setWindowMessages([]);
+      return;
+    }
+
+    const start = Math.max(0, totalCount - INITIAL_WINDOW);
+    const { items } = await getWindowMessages(convId, start, INITIAL_WINDOW);
+    setWindowMessages(items);
   }, []);
 
   useEffect(() => {
-    const sentinel = sentinelRef.current;
-    if (!sentinel || sorted.length === 0) return;
+    if (activeConversationId) {
+      loadInitialWindow(activeConversationId);
+    } else {
+      setWindowMessages([]);
+      setTotal(0);
+    }
+  }, [activeConversationId, loadInitialWindow]);
+
+  // ── 加载更早消息 ──
+  const handleLoadMore = useCallback(async () => {
+    if (loadingRef.current) return;
+    const firstMsg = windowMessages[0];
+    if (!firstMsg || !activeConversationId) return;
+
+    loadingRef.current = true;
+    setLoadingMore(true);
+
+    const el = scrollRef.current;
+    const prevScrollHeight = el?.scrollHeight ?? 0;
+
+    // 加载更多：从当前窗口往前取 LOAD_MORE 条
+    const currentTail = windowMessages.length;
+    const currentStart = Math.max(0, total - currentTail);
+    const newStart = Math.max(0, currentStart - LOAD_MORE);
+    const count = currentStart - newStart + currentTail;
+
+    const { items } = await getWindowMessages(activeConversationId, newStart, count);
+    setWindowMessages(items);
+
+    // 恢复滚动位置
+    if (el) {
+      requestAnimationFrame(() => {
+        el.scrollTop = el.scrollHeight - prevScrollHeight;
+      });
+    }
+
+    loadingRef.current = false;
+    setLoadingMore(false);
+  }, [windowMessages, total, activeConversationId]);
+
+  // ── 顶部哨兵 IntersectionObserver ──
+  useEffect(() => {
+    const sentinel = topSentinelRef.current;
+    const el = scrollRef.current;
+    if (!sentinel || !el) return;
+
+    const hasMore = windowMessages.length > 0 && windowMessages.length < total;
+    if (!hasMore) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0]?.isIntersecting) { handleLoadMore(); }
+        if (entries[0]?.isIntersecting) handleLoadMore();
       },
-      { root: scrollRef.current, threshold: 0.1 }
+      { root: el, threshold: 0 }
     );
-
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [sorted.length, handleLoadMore]);
+  }, [windowMessages.length, total, handleLoadMore]);
 
-  const lastMsgId = messages.length > 0 ? messages[messages.length - 1].id : null;
+  // ── 从 store 同步窗口内容（任何时候 store 变化都调用）──
+  const syncFromStore = useCallback(() => {
+    if (!activeConversationId) return;
+    const currentMsgs = useChatStore.getState().getCurrentMessages(activeConversationId);
+    const nonTool = currentMsgs.filter(m => m.role !== 'tool');
+    const newTotal = nonTool.length;
+    prevTotalRef.current = newTotal;
+    setTotal(newTotal);
+    setWindowMessages(nonTool.slice(-INITIAL_WINDOW));
+  }, [activeConversationId]);
+
+  // 监听 store 任何变化（不只是长度），流式更新也触发
   useEffect(() => {
-    if (scrollRef.current && sorted.length > 0) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [lastMsgId, sorted.length]);
+    if (!activeConversationId) return;
+    const unsub = useChatStore.subscribe(() => {
+      syncFromStore();
+    });
+    return unsub;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeConversationId]);
 
-  if (displayMessages.length === 0) {
+  // ── 滚动追踪 ──
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    isAtBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < SCROLL_BOTTOM_THRESHOLD;
+  }, []);
+
+  // ── 自动滚到底部 ──
+  // ── 自动滚到底部（对齐 RikkaHub：两套机制）──
+  // 机制1：新增消息（length 增加）→ 无条件强制跳到底部（对齐 RikkaHub onSendClick）
+  // 机制2：流式更新（length 不变）→ 仅在底部时跟随滚动（对齐 RikkaHub isAtBottom 保护）
+  const prevLenRef = useRef(windowMessages.length);
+  useEffect(() => {
+    const isNewMsg = windowMessages.length > prevLenRef.current;
+    if (displayConfig.autoScroll !== false && (isNewMsg || isAtBottomRef.current)) {
+      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+      // 跳底后立即标记为底部，确保下一个流式 chunk 来时 isAtBottomRef 为 true
+      isAtBottomRef.current = true;
+    }
+    prevLenRef.current = windowMessages.length;
+  }, [windowMessages, displayConfig.autoScroll]);
+
+  // 首次加载滚底
+  useEffect(() => {
+    if (windowMessages.length > 0) {
+      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+    }
+  }, []); // eslint-disable-line
+
+  // ── tool 结果映射 ──
+  const toolResults = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const m of windowMessages) {
+      if (m.role === 'tool' && m.toolCallId) map[m.toolCallId] = m.content;
+    }
+    return map;
+  }, [windowMessages]);
+
+  // ── 空状态 ──
+  if (total === 0) {
     return (
-      <div className="chat-view" ref={scrollRef}>
+      <div className="chat-view" ref={scrollRef} onScroll={handleScroll}>
         {bgFixedStyle && <div style={bgFixedStyle} />}
         <div className="chat-view__empty">开始对话吧</div>
       </div>
@@ -266,48 +286,88 @@ export default function ChatView() {
   return (
     <>
       {bgFixedStyle && <div style={bgFixedStyle} />}
-      <div className="chat-view" ref={scrollRef}>
-      <div ref={sentinelRef} style={{ height: 1, width: '100%' }} />
-      <div
-        style={{
-          height: `${virtualizer.getTotalSize()}px`,
-          position: 'relative',
-        }}
-      >
-          {virtualizer.getVirtualItems().map((virtualItem) => {
-          const msg = displayMessages[virtualItem.index];
-          const isLastInRound = msg.role === 'assistant' && (
-            virtualItem.index === displayMessages.length - 1 ||
-            (virtualItem.index + 1 < displayMessages.length && displayMessages[virtualItem.index + 1].role === 'user')
-          );
-          // 渲染使用 displayMessages 的长度和索引
-          const hasToolCalls = msg.role === 'assistant' && msg.toolCalls && msg.toolCalls.length > 0;
-          return (
-            <div
-              key={msg.id}
-              ref={virtualizer.measureElement}
-              data-index={virtualItem.index}
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                transform: `translateY(${virtualItem.start}px)`,
-              }}
-            >
-              {/* 内嵌工具调用卡片 */}
-              {hasToolCalls && msg.toolCalls && (
-                <ToolCard toolCalls={msg.toolCalls} results={toolResults} />
-              )}
-              {msg.role === 'assistant' && displayConfig.segmentBubbles ? (
-                <SegmentedMessageBubble msg={msg} thinkingCollapsed={thinkingCollapsed} agentAvatar={currentAgent?.avatar ?? ''} displayConfig={displayConfig} isLastInRound={isLastInRound} />
-              ) : (
-                <MessageBubble msg={msg} thinkingCollapsed={thinkingCollapsed} agentAvatar={currentAgent?.avatar ?? ''} displayConfig={displayConfig} isLastInRound={isLastInRound} />
-              )}
+      <div className="chat-view" ref={scrollRef} onScroll={handleScroll}>
+        {/* 顶部哨兵：检测是否需要加载更早消息 */}
+        {windowMessages.length < total && (
+          <>
+            <div ref={topSentinelRef} style={{ height: 1, width: '100%' }} />
+            <div style={{ textAlign: 'center', padding: 8, fontSize: 12, color: 'var(--app-text-secondary)' }}>
+              {loadingMore ? '加载中...' : '上滑加载更早消息'}
             </div>
-          );
-        })}
+          </>
+        )}
+
+        {/* 消息列表 */}
+        {windowMessages
+          .filter((m) => m.role !== 'tool')
+          .map((msg) => {
+            const isAssistant = msg.role === 'assistant';
+            return (
+              <div
+                key={msg.id}
+                id={`msg-${msg.id}`}
+                data-message-id={msg.id}
+                style={{ padding: '4px 0' }}
+              >
+                <MessageContextMenu actions={getMenuActions(msg)}>
+                  <MessageRenderer
+                    message={msg}
+                    config={displayConfig}
+                    isAssistant={isAssistant}
+                    toolResults={toolResults}
+                    showAvatar={displayConfig.showAvatars}
+                    agentAvatar={currentAgent?.avatar ?? ''}
+                    userAvatar={displayConfig.userAvatar}
+                  />
+                </MessageContextMenu>
+              </div>
+            );
+          })}
       </div>
-    </div>
-  </>);
+
+      {/* 编辑/复制底部窗口 */}
+      <MessageEditDrawer
+        open={!!editMsg || !!copyMsg}
+        content={editMsg?.content || copyMsg?.content || ''}
+        editable={!!editMsg}
+        onSave={(newContent) => {
+          if (editMsg) {
+            // 同步 windowMessages
+            setWindowMessages(prev => prev.map(m => m.id === editMsg.id ? { ...m, content: newContent } : m));
+            // 同步 chat-store（清除 parts 使回退到 content 渲染）
+            if (activeConversationId) {
+              useChatStore.getState().editMessageContent(activeConversationId, editMsg.id, newContent);
+            }
+            // 同步 DB
+            import('../../../services/chat-message-db').then(({ updateMessage }) => {
+              updateMessage(editMsg.id, { content: newContent }).catch(() => {});
+            });
+          }
+        }}
+        onResend={editMsg?.resend ? (newContent) => {
+          if (editMsg && activeConversationId) {
+            // 1. 以新消息身份添加编辑后的内容到 store
+            const newUserMsg = {
+              id: `msg-${Date.now()}`,
+              conversationId: activeConversationId,
+              role: 'user' as const,
+              content: newContent,
+              timestamp: Date.now(),
+              status: 'sent' as const,
+            };
+            useChatStore.getState().addMessage(activeConversationId, newUserMsg);
+            // 2. 正常调用 sendMessage（不加 fromResendMsgId）
+            resendMessage(activeConversationId, newContent).catch(() => {});
+          }
+        } : undefined}
+        onClose={() => { setEditMsg(null); setCopyMsg(null); }}
+      />
+      <ExportDrawer
+        open={showExport}
+        messages={windowMessages}
+        conversationTitle={activeConv?.title || '对话'}
+        onClose={() => setShowExport(false)}
+      />
+    </>
+  );
 }

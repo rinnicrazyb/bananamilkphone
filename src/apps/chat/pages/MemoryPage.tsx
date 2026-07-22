@@ -18,7 +18,7 @@ export default function MemoryPage({ onBack }: MemoryPageProps) {
   const agents = useChatStore((s) => s.agents);
   const allMemories = useChatStore((s) => s.memories);
   const rawMessages = useChatStore((s) =>
-    activeConversationId ? s.messages[activeConversationId] : []
+    activeConversationId ? (s.messages[activeConversationId] ?? []) : []
   );
   const updateMemory = useChatStore((s) => s.updateMemory);
   const deleteMemory = useChatStore((s) => s.deleteMemory);
@@ -118,7 +118,7 @@ export default function MemoryPage({ onBack }: MemoryPageProps) {
     return (
       <div className="func-fullpage">
         <div className="func-fullpage__header">
-          <button className="back-btn" onClick={onBack}><CaretLeft size={18} /> 返回</button>
+          <button className="back-btn" onClick={onBack}><CaretLeft size={18} /></button>
           <h1>长期记忆</h1>
         </div>
         <div className="func-fullpage__body" style={{ alignItems: 'center', justifyContent: 'center', textAlign: 'center', gap: 8 }}>
@@ -136,7 +136,7 @@ export default function MemoryPage({ onBack }: MemoryPageProps) {
   return (
     <div className="func-fullpage">
       <div className="func-fullpage__header">
-        <button className="back-btn" onClick={onBack}><CaretLeft size={18} /> 返回</button>
+        <button className="back-btn" onClick={onBack}><CaretLeft size={18} /></button>
         <h1>长期记忆</h1>
       </div>
       <div className="func-fullpage__body">

@@ -10,7 +10,7 @@ export default function StubPage({ onBack, title, description }: StubPageProps) 
   return (
     <div className="func-fullpage">
       <div className="func-fullpage__header">
-        <button className="back-btn" onClick={onBack}><CaretLeft size={18} /> 返回</button>
+        <button className="back-btn" onClick={onBack}><CaretLeft size={18} /></button>
         <h1>{title}</h1>
       </div>
       <div className="func-fullpage__body" style={{ alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>

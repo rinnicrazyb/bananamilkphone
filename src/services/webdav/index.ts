@@ -8,30 +8,15 @@
  *   纯浏览器（fallback）→ fetch（可能因 CORS 失败）
  */
 
-import { Capacitor } from '@capacitor/core';
 import type { WebDAVConfig } from '../../apps/settings/types';
+import { isNative, isViteDev } from '../../utils/platform';
+import { WebDavError, ErrorCode, getErrorMessage } from '../../types/errors';
 
 /** WebDAV 远程文件信息 */
 export interface WebDAVFileInfo {
   name: string;
   size: number;
   lastModified: string;
-}
-
-// ─── 平台检测 ──────────────────────────────────
-
-/** 是否运行在 Capacitor 原生环境中 */
-function isNative(): boolean {
-  try {
-    return Capacitor.getPlatform() !== 'web';
-  } catch {
-    return false;
-  }
-}
-
-/** 是否运行在 Vite 开发模式下 */
-function isViteDev(): boolean {
-  return typeof window !== 'undefined' && window.location.hostname === 'localhost';
 }
 
 // ─── HTTP 请求抽象层 ────────────────────────────
@@ -50,6 +35,9 @@ interface ProxyResponse {
  * - 原生环境 → CapacitorHttp
  * - Vite 开发 → 本地代理转发
  * - fallback  → fetch
+ *
+ * 返回包含 status / body / headers / responseBody 的结构，
+ * 即使 HTTP 报错也返回 body 文本供调用方暴露给用户。
  */
 async function request(
   url: string,
@@ -57,19 +45,29 @@ async function request(
   headers: Record<string, string>,
   body?: Blob | string | null
 ): Promise<{ status: number; body: string; headers: Record<string, string> }> {
-  // ── 方案一：Capacitor 原生 → CapacitorHttp ──
+  // ── 方案一：Capacitor 原生 → WebDavNative（OkHttp） ──
   if (isNative()) {
-    const { CapacitorHttp } = await import('@capacitor/core');
-    const res = await CapacitorHttp.request({
-      method,
-      url,
-      headers,
-      data: body,
-    });
+    const { httpRequest } = await import('../http-native');
+    // body → 字符串（Blob 先转 base64 再经 httpRequest 自动二次 base64 编码）
+    let bodyStr: string | undefined;
+    if (body instanceof Blob) {
+      const buffer = await body.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      let binary = '';
+      const chunkSize = 8192;
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        binary += String.fromCharCode(...bytes.slice(i, i + chunkSize));
+      }
+      bodyStr = btoa(binary);
+    } else if (typeof body === 'string') {
+      bodyStr = body;
+    }
+    // httpRequest 内部对 body 做 base64 编码传给原生层，响应 body 自动解码
+    const res = await httpRequest({ method, url, headers, body: bodyStr });
     return {
       status: res.status,
-      body: typeof res.data === 'string' ? res.data : JSON.stringify(res.data),
-      headers: res.headers as Record<string, string>,
+      body: res.body,
+      headers: res.headers,
     };
   }
 
@@ -106,7 +104,7 @@ async function request(
     });
     const data: ProxyResponse = await res.json();
 
-    if (data.error) throw new Error(data.error);
+    if (data.error) throw new WebDavError(data.error, ErrorCode.WEBDAV_CONNECTION_FAILED);
 
     let responseBody = '';
     if (data.bodyText) {
@@ -151,25 +149,40 @@ function fullUrl(config: WebDAVConfig, filename?: string): string {
   return `${base}/${path}/`;
 }
 
-/** 解析 PROPFIND 响应的 XML，提取文件列表 */
+/** 解析 PROPFIND 响应的 XML，提取文件列表（使用 DOMParser 替代正则，支持任意 XML namespace） */
 function parsePropfindResponse(xmlText: string): WebDAVFileInfo[] {
   const files: WebDAVFileInfo[] = [];
-  const responseRegex = /<d:response>([\s\S]*?)<\/d:response>/gi;
-  let match;
-  while ((match = responseRegex.exec(xmlText)) !== null) {
-    const block = match[1];
-    const hrefMatch = block.match(/<d:href>([^<]+)<\/d:href>/i);
-    if (!hrefMatch) continue;
-    const href = decodeURIComponent(hrefMatch[1].trim());
-    if (href.endsWith('/')) continue;
+  let xmlDoc: Document;
+  try {
+    xmlDoc = new DOMParser().parseFromString(xmlText, 'text/xml');
+    // 检测解析错误
+    const parseError = xmlDoc.querySelector('parsererror');
+    if (parseError) {
+      throw new WebDavError(`XML 解析失败: ${parseError.textContent}`, ErrorCode.WEBDAV_XML_PARSE_ERROR);
+    }
+  } catch (err) {
+    if (err instanceof WebDavError) throw err;
+    throw new WebDavError(`XML 解析异常: ${getErrorMessage(err)}`, ErrorCode.WEBDAV_XML_PARSE_ERROR);
+  }
+
+  // 匹配任意 namespace 下的 response / href / getcontentlength / getlastmodified
+  const responses = xmlDoc.querySelectorAll('response');
+  for (const resp of responses) {
+    const hrefEl = resp.querySelector('href');
+    if (!hrefEl) continue;
+    const href = decodeURIComponent(hrefEl.textContent?.trim() || '');
+    if (!href || href.endsWith('/')) continue;
     const name = href.split('/').pop() || '';
     if (!name) continue;
+
     let size = 0;
-    const sizeMatch = block.match(/<d:getcontentlength[^>]*>(\d+)<\/d:getcontentlength>/i);
-    if (sizeMatch) size = parseInt(sizeMatch[1], 10);
+    const sizeEl = resp.querySelector('getcontentlength');
+    if (sizeEl) size = parseInt(sizeEl.textContent || '0', 10);
+
     let lastModified = '';
-    const modMatch = block.match(/<d:getlastmodified[^>]*>([^<]+)<\/d:getlastmodified>/i);
-    if (modMatch) lastModified = modMatch[1].trim();
+    const modEl = resp.querySelector('getlastmodified');
+    if (modEl) lastModified = modEl.textContent?.trim() || '';
+
     files.push({ name, size, lastModified });
   }
   return files;
@@ -181,31 +194,41 @@ function parsePropfindResponse(xmlText: string): WebDAVFileInfo[] {
 export async function testConnection(config: WebDAVConfig): Promise<{ ok: boolean; error?: string }> {
   try {
     const url = fullUrl(config);
-    const res = await request(url, 'PROPFIND', { 'Authorization': authHeader(config), 'Depth': '0' });
+    const res = await request(url, 'PROPFIND', { Authorization: authHeader(config), 'Depth': '0' });
     if (res.status === 207 || res.status < 300) return { ok: true };
-    return { ok: false, error: `HTTP ${res.status}` };
+    const detail = res.body ? res.body.slice(0, 200) : '';
+    return { ok: false, error: `HTTP ${res.status}${detail ? ': ' + detail : ''}` };
   } catch (err) {
-    return { ok: false, error: (err as Error).message };
+    return { ok: false, error: getErrorMessage(err) };
   }
 }
 
-/** 确保远程目录存在（MKCOL） */
+/** 确保远程目录存在 — 递归创建多级目录 */
 async function ensureDirectory(config: WebDAVConfig): Promise<void> {
-  const url = fullUrl(config);
-  const res = await request(url, 'MKCOL', { 'Authorization': authHeader(config) });
-  if (res.status !== 201 && res.status !== 405 && res.status >= 300) {
-    throw new Error(`创建远程目录失败: HTTP ${res.status}`);
+  const base = config.url.replace(/\/+$/, '');
+  const path = config.remotePath.replace(/^\/+|\/+$/g, '');
+  const segments = path.split('/').filter(Boolean);
+  let current = base;
+  for (const seg of segments) {
+    current += '/' + seg;
+    const dirUrl = current + '/';
+    const res = await request(dirUrl, 'MKCOL', { Authorization: authHeader(config) });
+    if (res.status !== 201 && res.status !== 405 && res.status !== 301 && res.status !== 302 && res.status >= 300) {
+      const detail = res.body ? res.body.slice(0, 200) : '';
+      throw new WebDavError(`创建目录失败: HTTP ${res.status}${detail ? ': ' + detail : ''}`, ErrorCode.WEBDAV_CONNECTION_FAILED, res.status, res.body);
+    }
   }
 }
 
 /** 列出远程备份文件（PROPFIND depth=1） */
 export async function listBackups(config: WebDAVConfig): Promise<WebDAVFileInfo[]> {
   const url = fullUrl(config);
-  const res = await request(url, 'PROPFIND', { 'Authorization': authHeader(config), 'Depth': '1' });
+  const res = await request(url, 'PROPFIND', { Authorization: authHeader(config), 'Depth': '1' });
 
   if (res.status === 404) return [];
   if (res.status !== 207 && res.status >= 300) {
-    throw new Error(`列出备份失败: HTTP ${res.status}`);
+    const detail = res.body ? res.body.slice(0, 200) : '';
+    throw new WebDavError(`列出备份失败: HTTP ${res.status}${detail ? ': ' + detail : ''}`, ErrorCode.WEBDAV_CONNECTION_FAILED, res.status, res.body);
   }
   return parsePropfindResponse(res.body);
 }
@@ -214,17 +237,23 @@ export async function listBackups(config: WebDAVConfig): Promise<WebDAVFileInfo[
 export async function uploadBackup(config: WebDAVConfig, filename: string, data: Blob): Promise<void> {
   await ensureDirectory(config);
   const url = fullUrl(config, filename);
-  const res = await request(url, 'PUT', { 'Authorization': authHeader(config), 'Content-Type': 'application/zip' }, data);
-  if (res.status >= 300) throw new Error(`上传失败: HTTP ${res.status}`);
+  const res = await request(url, 'PUT', { Authorization: authHeader(config), 'Content-Type': 'application/zip' }, data);
+  if (res.status >= 300) {
+    const detail = res.body ? res.body.slice(0, 200) : '';
+    throw new WebDavError(`上传失败: HTTP ${res.status}${detail ? ': ' + detail : ''}`, ErrorCode.WEBDAV_CONNECTION_FAILED, res.status, res.body);
+  }
 }
 
-/** 从 WebDAV 下载备份（仅 CapacitorHttp 或 proxy 模式能生效） */
+/** 从 WebDAV 下载备份 */
 export async function downloadBackup(config: WebDAVConfig, filename: string): Promise<Blob> {
   const url = fullUrl(config, filename);
   // 原生 Capacitor 或 Vite proxy 模式：通过 request 获取 base64 数据
   if (isNative() || isViteDev()) {
-    const res = await request(url, 'GET', { 'Authorization': authHeader(config) });
-    if (res.status >= 300) throw new Error(`下载失败: HTTP ${res.status}`);
+    const res = await request(url, 'GET', { Authorization: authHeader(config) });
+    if (res.status >= 300) {
+      const detail = res.body ? res.body.slice(0, 200) : '';
+      throw new WebDavError(`下载失败: HTTP ${res.status}${detail ? ': ' + detail : ''}`, ErrorCode.WEBDAV_CONNECTION_FAILED, res.status, res.body);
+    }
     // 将 base64 转为 Blob
     const byteStr = atob(res.body);
     const bytes = new Uint8Array(byteStr.length);
@@ -232,14 +261,17 @@ export async function downloadBackup(config: WebDAVConfig, filename: string): Pr
     return new Blob([bytes], { type: 'application/zip' });
   }
   // fallback：直接 fetch
-  const res = await fetch(url, { method: 'GET', headers: { 'Authorization': authHeader(config) } });
-  if (!res.ok) throw new Error(`下载失败: HTTP ${res.status}`);
+  const res = await fetch(url, { method: 'GET', headers: { Authorization: authHeader(config) } });
+  if (!res.ok) throw new WebDavError(`下载失败: HTTP ${res.status}`, ErrorCode.WEBDAV_CONNECTION_FAILED, res.status);
   return res.blob();
 }
 
 /** 删除远程备份文件 */
 export async function deleteBackup(config: WebDAVConfig, filename: string): Promise<void> {
   const url = fullUrl(config, filename);
-  const res = await request(url, 'DELETE', { 'Authorization': authHeader(config) });
-  if (res.status >= 300) throw new Error(`删除失败: HTTP ${res.status}`);
+  const res = await request(url, 'DELETE', { Authorization: authHeader(config) });
+  if (res.status >= 300) {
+    const detail = res.body ? res.body.slice(0, 200) : '';
+    throw new WebDavError(`删除失败: HTTP ${res.status}${detail ? ': ' + detail : ''}`, ErrorCode.WEBDAV_CONNECTION_FAILED, res.status, res.body);
+  }
 }

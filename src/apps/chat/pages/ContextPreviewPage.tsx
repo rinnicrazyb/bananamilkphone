@@ -75,7 +75,11 @@ function InjView({ inj }: { inj: { content: string; position: string; role: stri
 
 export default function ContextPreviewPage({ onBack }: Props) {
   const activeConversationId = useChatStore((s) => s.activeConversationId);
-  const rawMessages = useChatStore((s) => activeConversationId ? s.messages[activeConversationId] : undefined);
+  const storeMessages = useChatStore((s) => activeConversationId ? s.messages[activeConversationId] : undefined);
+  const rawMessages = useMemo(() => {
+    if (!storeMessages || !activeConversationId) return [];
+    return useChatStore.getState().getCurrentMessages(activeConversationId);
+  }, [storeMessages, activeConversationId]);
   const messages = rawMessages ?? [];
   const conversations = useChatStore((s) => s.conversations);
   const agents = useChatStore((s) => s.agents);
@@ -90,10 +94,9 @@ export default function ContextPreviewPage({ onBack }: Props) {
     return { agent, memories: agent?.id ? (useChatStore.getState().memories[agent.id] ?? []) : [], displayConfig, mcpServers, searchProviders: {}, lorebooks: allLorebooks.filter((b) => boundBookIds.includes(b.id)) };
   }, [agent, displayConfig, mcpServers]);
   const allMems = agent?.id ? (useChatStore.getState().memories[agent.id] ?? []) : [];
-  const sortedMessages = useMemo(() => [...messages].sort((a, b) => a.timestamp - b.timestamp), [messages]);
-  const baseMessages: LLMMessage[] = useMemo(() => sortedMessages.map((m) =>
+  const baseMessages: LLMMessage[] = useMemo(() => messages.map((m) =>
     m.role === 'tool' ? { role: 'tool' as const, content: m.content, toolCallId: m.toolCallId } : { role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content, toolCalls: m.toolCalls as any }
-  ), [sortedMessages]);
+  ), [messages]);
   const processedMessages = useMemo(() => runPipeline(baseMessages, ctx), [baseMessages, ctx]);
   const injections = useMemo(() => collectInjections(baseMessages, ctx), [baseMessages, ctx]);
   const wbBefore = injections.filter((i) => i.position === 'BEFORE_SYSTEM_PROMPT');
@@ -170,7 +173,7 @@ export default function ContextPreviewPage({ onBack }: Props) {
   return (
     <div className="func-fullpage">
       <div className="func-fullpage__header">
-        <button className="back-btn" onClick={onBack}><CaretLeft size={18} /> 返回</button><h1>上下文拼装</h1>
+        <button className="back-btn" onClick={onBack}><CaretLeft size={18} /></button><h1>上下文拼装</h1>
       </div>
       <div className="func-fullpage__body">
         <div className="context-summary">

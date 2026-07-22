@@ -13,9 +13,13 @@ import {
   MusicNote,
 } from '@phosphor-icons/react';
 import { themeEngine } from './services/theme-engine/index';
+import { getItem, setItem } from './services/sqlite/index';
+import type { ThemeConfig } from './types';
 import LauncherPage from './apps/launcher/pages/LauncherPage';
 import ThemePage from './apps/theme/pages/ThemePage';
+import AppIconsPage from './apps/theme/pages/AppIconsPage';
 import ChatPage from './apps/chat/pages/ChatPage';
+import ChatSearchPage from './apps/chat/pages/ChatSearchPage';
 import SettingsPage from './apps/settings/pages/SettingsPage';
 import { useAppStore } from './store/app-store';
 import { usePersistence } from './services/persistence/use-persistence';
@@ -35,7 +39,9 @@ function AppRoutes() {
     <Routes>
       <Route path="/" element={<LauncherPage />} />
       <Route path="/theme" element={<ThemePage />} />
+      <Route path="/theme/app-icons" element={<AppIconsPage />} />
       <Route path="/chat" element={<ChatPage />} />
+      <Route path="/chat/search/:agentId" element={<ChatSearchPage />} />
       <Route path="/settings" element={<SettingsPage />} />
       <Route path="/lorebook" element={<LorebookListPage />} />
       <Route path="/lorebook/:id" element={<LorebookDetailPage />} />
@@ -52,6 +58,7 @@ function AppRoutes() {
 
 export default function App() {
   const theme = useAppStore((s) => s.theme);
+  const _themeLoaded = useAppStore((s) => s._themeLoaded);
   const registerApp = useAppStore((s) => s.registerApp);
 
   // 数据持久化（加载已保存数据 + 自动防抖保存）
@@ -78,6 +85,56 @@ export default function App() {
   useEffect(() => {
     themeEngine.apply(theme);
   }, [theme]);
+
+  // 主题持久化（仅在加载完成后保存，防止首次挂载覆盖 SQLite）
+  useEffect(() => {
+    if (_themeLoaded) {
+      setItem('theme-config', JSON.stringify(theme));
+    }
+  }, [theme, _themeLoaded]);
+
+  // 加载已保存的主题配置 + 重载字体
+  useEffect(() => {
+    getItem('theme-config').then((saved) => {
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved) as Partial<ThemeConfig>;
+          const store = useAppStore.getState();
+          store.updateTheme(parsed);
+          themeEngine.apply(parsed);
+
+          // 重载自定义字体
+          if (parsed.fontData && parsed.fontFamily) {
+            const fontFace = new FontFace(parsed.fontFamily, `url(${parsed.fontData})`);
+            fontFace.load().then(() => {
+              document.fonts.add(fontFace);
+            }).catch(() => {});
+          }
+        } catch {
+          // 静默失败，使用默认主题
+        }
+      }
+      // 标记主题已加载，允许后续保存
+      useAppStore.getState()._setThemeLoaded();
+    });
+  }, []);
+
+  // 加载已保存的自定义图标（桌面初始化即需要）
+  useEffect(() => {
+    getItem('custom-icons').then((saved) => {
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved) as Record<string, string>;
+          const store = useAppStore.getState();
+          if (Object.keys(store.customIcons).length === 0) {
+            for (const [appId, dataUrl] of Object.entries(parsed)) {
+              store.setCustomIcon(appId, dataUrl);
+            }
+          }
+        } catch { /* ignore */ }
+      }
+    });
+  }, []);
 
   // 打开软件时检查待处理的记忆提取
   useEffect(() => {
@@ -118,7 +175,7 @@ export default function App() {
           if (convs.length === 0) continue;
 
           const conv = convs[0];
-          const msgs = state.messages[conv.id] || [];
+          const msgs = state.getCurrentMessages(conv.id);
           const unextracted = msgs.filter((m) => !m.memoryExtracted);
           if (unextracted.length === 0) continue;
 
@@ -143,10 +200,28 @@ export default function App() {
     return () => clearTimeout(timer);
   }, []);
 
-  // 通知服务初始化 + 消息事件监听
+  // 通知服务初始化 + 消息事件监听 + 后台任务通知
   useEffect(() => {
     import('./services/notification/index').then(({ initNotifications, notifyMessageReceived }) => {
       initNotifications();
+
+      // 监听后台任务完成（非活跃对话）
+      import('./services/background-task/index').then(({ taskManager }) => {
+        taskManager.subscribe((task, event) => {
+          if (event !== 'completed') return;
+          // 如果任务对应的对话不是当前活跃对话，推送通知
+          import('./apps/chat/store/chat-store').then(({ useChatStore }) => {
+            const activeId = useChatStore.getState().activeConversationId;
+            if (task.conversationId !== activeId) {
+              const conv = useChatStore.getState().conversations.find(c => c.id === task.conversationId);
+              const agent = useChatStore.getState().agents.find(a => a.id === task.agentId);
+              if (conv && agent) {
+                notifyMessageReceived(agent.name, '有新回复', `/chat`);
+              }
+            }
+          });
+        });
+      });
 
       // 监听 AI 回复完成事件
       import('./services/event-bus/index').then(({ eventBus }) => {

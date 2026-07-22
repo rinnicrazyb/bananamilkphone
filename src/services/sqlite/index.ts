@@ -10,7 +10,7 @@
  */
 
 import initSqlJs from 'sql.js';
-import type { SqlJsStatic, Database } from 'sql.js';
+import type { SqlJsStatic, Database, SqlValue } from 'sql.js';
 
 // ─── 初始化状态 ──────────────────────────────────
 
@@ -143,6 +143,25 @@ export async function initDatabase(): Promise<void> {
             updated_at INTEGER NOT NULL
           )
         `);
+        db.run(`
+          CREATE TABLE IF NOT EXISTS messages (
+            id TEXT PRIMARY KEY NOT NULL,
+            conversation_id TEXT NOT NULL,
+            role TEXT NOT NULL,
+            content TEXT NOT NULL DEFAULT '',
+            parts TEXT DEFAULT '[]',
+            reasoning TEXT DEFAULT '',
+            tool_calls TEXT DEFAULT '[]',
+            tool_call_id TEXT DEFAULT '',
+            timestamp INTEGER NOT NULL,
+            status TEXT NOT NULL DEFAULT 'sent',
+            memory_extracted INTEGER DEFAULT 0,
+            token_prompt INTEGER,
+            token_completion INTEGER,
+            token_cached INTEGER
+          )
+        `);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_messages_conv_time ON messages(conversation_id, timestamp)`);
         // 新数据库立即持久化
         saveDBToIndexedDB();
       }
@@ -150,6 +169,8 @@ export async function initDatabase(): Promise<void> {
       // 确保表存在（兼容旧数据库文件）
       db.run(`CREATE TABLE IF NOT EXISTS app_data (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL, updated_at INTEGER NOT NULL)`);
       db.run(`CREATE TABLE IF NOT EXISTS media (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL, updated_at INTEGER NOT NULL)`);
+      db.run(`CREATE TABLE IF NOT EXISTS messages (id TEXT PRIMARY KEY NOT NULL, conversation_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL DEFAULT '', parts TEXT DEFAULT '[]', reasoning TEXT DEFAULT '', tool_calls TEXT DEFAULT '[]', tool_call_id TEXT DEFAULT '', timestamp INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'sent', memory_extracted INTEGER DEFAULT 0, token_prompt INTEGER, token_completion INTEGER, token_cached INTEGER)`);
+      db.run(`CREATE INDEX IF NOT EXISTS idx_messages_conv_time ON messages(conversation_id, timestamp)`);
 
       // 页面关闭前保存
       window.addEventListener('beforeunload', saveDBImmediately);
@@ -176,6 +197,39 @@ export async function initDatabase(): Promise<void> {
 function ensureDB(): Database {
   if (!db) throw new Error('[SQLite] Database not initialized');
   return db;
+}
+
+// ─── 低层 SQL 执行 ────────────────────────────────
+
+/** 执行非查询 SQL (INSERT/UPDATE/DELETE) */
+export function runSql(sql: string, params: SqlValue[] = []): void {
+  ensureDB().run(sql, params);
+  saveDBToIndexedDB();
+}
+
+/** 执行非查询 SQL，不触发持久化（事务内部用） */
+export function runSqlNoSave(sql: string, params: SqlValue[] = []): void {
+  ensureDB().run(sql, params);
+}
+
+/** 执行查询 SQL (SELECT)，返回行数组 */
+export function querySql(sql: string, params: SqlValue[] = []): Record<string, unknown>[] {
+  const stmt = ensureDB().prepare(sql);
+  if (params.length > 0) stmt.bind(params);
+  const rows: Record<string, unknown>[] = [];
+  while (stmt.step()) {
+    rows.push(stmt.getAsObject());
+  }
+  stmt.free();
+  return rows;
+}
+
+/** 批量执行 INSERT（使用事务，性能更好） */
+export function runInTransaction(fn: () => void): void {
+  const d = ensureDB();
+  d.run('BEGIN');
+  try { fn(); d.run('COMMIT'); } catch (e) { d.run('ROLLBACK'); throw e; }
+  saveDBToIndexedDB();
 }
 
 // ─── app_data 操作 ─────────────────────────────────

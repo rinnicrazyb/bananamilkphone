@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { LLMConfig } from '../services/llm/types';
-import type { MCPServer, SearchProviders, LLMPreset, WebDAVConfig } from '../apps/settings/types';
-import { DEFAULT_SEARCH_PROVIDERS, DEFAULT_WEBDAV_CONFIG } from '../apps/settings/types';
+import type { MCPServer, SearchProviders, LLMPreset, WebDAVConfig, TTSConfig, OCRConfig } from '../apps/settings/types';
+import { DEFAULT_SEARCH_PROVIDERS, DEFAULT_WEBDAV_CONFIG, DEFAULT_TTS_CONFIG, DEFAULT_OCR_CONFIG } from '../apps/settings/types';
 import { sqliteStorageAdapter } from '../services/sqlite/index';
 
 export interface SettingsState {
@@ -12,6 +12,10 @@ export interface SettingsState {
   mcpServers: MCPServer[];
   notificationsEnabled: boolean;
   webdavConfig: WebDAVConfig;
+  ttsConfig: TTSConfig;
+  ocrConfig: OCRConfig;
+  /** MCP OAuth 持久化状态（serverId → JSON） */
+  mcpOAuthState: Record<string, string>;
 }
 
 export interface SettingsActions {
@@ -19,6 +23,8 @@ export interface SettingsActions {
   addPreset: (preset: LLMPreset) => void;
   updatePreset: (id: string, data: Partial<LLMPreset>) => void;
   removePreset: (id: string) => void;
+  updateTTSConfig: (config: Partial<TTSConfig>) => void;
+  updateOCRConfig: (config: Partial<OCRConfig>) => void;
   updateSearchProvider: (
     provider: keyof SearchProviders,
     config: Partial<SearchProviders[keyof SearchProviders]>
@@ -28,6 +34,8 @@ export interface SettingsActions {
   removeMCPServer: (id: string) => void;
   setNotificationsEnabled: (enabled: boolean) => void;
   updateWebDAVConfig: (config: Partial<WebDAVConfig>) => void;
+  /** 保存 MCP OAuth 状态 */
+  setMCPOAuthState: (serverId: string, state: string) => void;
 }
 
 export const useSettingsStore = create<SettingsState & SettingsActions>()(
@@ -46,6 +54,9 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
       mcpServers: [],
       notificationsEnabled: false,
       webdavConfig: { ...DEFAULT_WEBDAV_CONFIG },
+      ttsConfig: { ...DEFAULT_TTS_CONFIG },
+      ocrConfig: { ...DEFAULT_OCR_CONFIG },
+      mcpOAuthState: {},
 
       // ---- Actions ----
       updateLLMConfig: (config) =>
@@ -68,6 +79,16 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
       removePreset: (id) =>
         set((state) => ({
           llmPresets: state.llmPresets.filter((p) => p.id !== id),
+        })),
+
+      updateTTSConfig: (config) =>
+        set((state) => ({
+          ttsConfig: { ...state.ttsConfig, ...config },
+        })),
+
+      updateOCRConfig: (config) =>
+        set((state) => ({
+          ocrConfig: { ...state.ocrConfig, ...config },
         })),
 
       updateSearchProvider: (provider, config) =>
@@ -101,13 +122,20 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
         set((state) => ({
           webdavConfig: { ...state.webdavConfig, ...config },
         })),
+      setMCPOAuthState: (serverId, state) =>
+        set((prev) => ({
+          mcpOAuthState: { ...prev.mcpOAuthState, [serverId]: state },
+        })),
     }),
     {
       name: 'settings-store',
       storage: createJSONStorage(() => sqliteStorageAdapter),
-      version: 1,
+      version: 2,
       migrate: (persistedState: any, _version: number) => {
         let state = { ...persistedState };
+        // 补全 ttsConfig / ocrConfig
+        if (!state.ttsConfig) state.ttsConfig = { ...DEFAULT_TTS_CONFIG };
+        if (!state.ocrConfig) state.ocrConfig = { ...DEFAULT_OCR_CONFIG };
         // 从旧版本迁移：补全 MCPServer 新字段
         if (state.mcpServers) {
           state.mcpServers = state.mcpServers.map((s: any) => ({

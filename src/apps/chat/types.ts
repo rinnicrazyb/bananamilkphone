@@ -14,6 +14,12 @@ export interface AgentDisplayConfig {
   bubbleFollowAvatar: boolean;
   showTime: boolean;
   showTokens: boolean;
+  /** 显示分支切换箭头 */
+  showBranchArrows: boolean;
+  /** 显示推理耗时 */
+  showReasoningDuration: boolean;
+  /** AI生成时自动滚动到底部 */
+  autoScroll: boolean;
 
   /** 自定义气泡样式（data URL） */
   userBubbleImage?: string;
@@ -56,10 +62,13 @@ export const DEFAULT_DISPLAY_CONFIG: AgentDisplayConfig = {
   bgBlur: 0,
   showAvatars: true,
   useBubbles: true,
-  segmentBubbles: false,
+  segmentBubbles: true,
   bubbleFollowAvatar: false,
   showTime: true,
   showTokens: false,
+  showBranchArrows: true,
+  showReasoningDuration: false,
+  autoScroll: true,
   enabledMCPServerIds: [],
   enabledSearchProviders: [],
   extractionKeywords: ['晚安', '记得', '我喜欢', '我讨厌', '最喜欢'],
@@ -72,6 +81,8 @@ export const DEFAULT_DISPLAY_CONFIG: AgentDisplayConfig = {
 
 /** 智能体设置（可选，覆盖全局 LLM 配置） */
 export interface AgentSettings {
+  /** 选中的 API 预设 ID（为空则使用全局配置） */
+  presetId?: string;
   model?: string;
   ocrModel?: string;
   tts?: string;
@@ -121,14 +132,39 @@ export interface ToolDefinition {
   };
 }
 
+/** 消息内容部件 — RikkaHub 风格多类型消息 */
+export type MessagePart =
+  | { type: 'text'; content: string }
+  | { type: 'image'; url: string }
+  | { type: 'reasoning'; content: string; finishedAt?: number }
+  | { type: 'tool_call'; toolCallId: string; toolName: string; input: string; output?: string; isExecuted?: boolean; approvalState?: 'auto' | 'pending' | 'approved' | 'denied' }
+  | { type: 'html'; content: string };
+
+/** 消息节点 — 一个对话位置的所有分支版本 */
+export interface MessageNode {
+  id: string;
+  conversationId: string;
+  role: 'user' | 'assistant' | 'system' | 'tool';
+  /** 该位置的所有分支消息（按时间序），selectedIndex 指向当前显示的 */
+  messages: Message[];
+  /** 当前选中的分支索引（0-based） */
+  selectedIndex: number;
+  /** 创建时间 */
+  createdAt: number;
+}
+
 /** 消息 */
 export interface Message {
   id: string;
   conversationId: string;
   role: 'user' | 'assistant' | 'system' | 'tool';
+  /** 兼容旧字段：纯文本内容（新代码应使用 parts） */
   content: string;
+  /** 旧版：思考链文本（逐步迁移到 parts） */
   reasoning?: string;
-  /** assistant 消息中的工具调用 */
+  /** 消息部件数组（RikkaHub 风格） */
+  parts?: MessagePart[];
+  /** 旧版：assistant 消息中的工具调用（逐步迁移到 parts） */
   toolCalls?: ToolCall[];
   /** tool 角色消息关联的 tool_call_id */
   toolCallId?: string;
@@ -141,6 +177,16 @@ export interface Message {
     completion: number;
     cached: number;
   };
+  /** 推理耗时（毫秒） */
+  reasoningDuration?: number;
+  /** 所属节点 ID（MessageNode 体系，空=旧数据单消息节点） */
+  nodeId?: string;
+  /** 分支信息（由 store.getVisibleMessages 动态设置，用于 UI 显示） */
+  branchNodeId?: string;
+  branchIndex?: number;
+  branchTotal?: number;
+  /** 收藏 */
+  favorite?: boolean;
 }
 
 /** 记忆条目 */

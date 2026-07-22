@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom';
 import { useChatStore } from '../store/chat-store';
 import { CaretLeft } from '@phosphor-icons/react';
 import type { Agent } from '../types';
@@ -24,15 +25,14 @@ function formatLastContact(timestamp: number): string {
 }
 
 export default function AgentList() {
+  const navigate = useNavigate();
   const agents = useChatStore((s) => s.agents);
   const conversations = useChatStore((s) => s.conversations);
   const addAgent = useChatStore((s) => s.addAgent);
   const setActiveConversation = useChatStore((s) => s.setActiveConversation);
   const addConversation = useChatStore((s) => s.addConversation);
-  const updateAgentLastContact = useChatStore((s) => s.updateAgentLastContact);
 
   const openOrCreateConversation = (agentId: string) => {
-    updateAgentLastContact(agentId, Date.now());
     // 查找该智能体下已有对话，按更新时间排序，取最新的
     const existing = conversations
       .filter((c) => c.agentId === agentId)
@@ -75,8 +75,8 @@ export default function AgentList() {
   return (
     <div className="chat-agent-list">
       <div className="chat-agent-list__header">
-        <button className="back-btn" onClick={() => window.history.back()}>
-          <CaretLeft size={18} /> 返回
+        <button className="back-btn" onClick={() => navigate('/', { replace: true })}>
+          <CaretLeft size={18} />
         </button>
         <h1>聊天</h1>
         {agents.length > 0 && (

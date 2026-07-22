@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   GearSix,
   Globe,
@@ -121,6 +122,7 @@ function ToggleRow({
 
 /* ───── 主页面 ───── */
 export default function SettingsPage() {
+  const navigate = useNavigate();
   const [subPage, setSubPage] = useState<SettingsSubPage>(null);
   const notificationsEnabled = useSettingsStore((s) => s.notificationsEnabled);
   const setNotificationsEnabled = useSettingsStore((s) => s.setNotificationsEnabled);
@@ -136,8 +138,8 @@ export default function SettingsPage() {
     <div className="settings-page">
       {/* 顶栏 */}
       <div className="settings-page__header">
-        <button className="back-btn" onClick={() => window.history.back()}>
-          <CaretLeft size={18} /> 返回
+        <button className="back-btn" onClick={() => navigate('/', { replace: true })}>
+          <CaretLeft size={18} />
         </button>
         <h1>设置</h1>
       </div>
