@@ -844,6 +844,7 @@ body {
   border-bottom: 1px solid var(--app-border);
   min-width: 0;
   overflow: hidden;
+  background: var(--app-bg);
 }
 
 .chat-page__header h1 {
