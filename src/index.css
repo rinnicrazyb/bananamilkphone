@@ -78,6 +78,9 @@ body {
   height: 100%;
   display: flex;
   flex-direction: column;
+  /* 全屏模式：系统状态栏 overlay 在上方，内容通过 safe-area 避开 */
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 /* ---- 滚动条 ---- */

@@ -201,6 +201,27 @@ APP采用4×6宫格，宽4图标，长6图标
 - 主动消息窗口为对应智能体下最新联系的窗口
 - 所有需要发送给LLM的功能性提示词都显示提示词文本并添加修改按钮，支持用户自定义提示词
 
+**本地工具系统（2026-07-25 新增）：**
+在功能盒中新增"本地工具"页面（扳手图标），集成 7 个本地工具，让 AI 能感知和操作手机本地能力。
+
+| 工具 | 工具名 | 实现方式 | 需审批 |
+|------|--------|----------|--------|
+| JavaScript 引擎 | `eval_javascript` | quickjs-emscripten（WASM 沙箱） | 否 |
+| 时间信息 | `get_time_info` | JS Date + Intl（自动注入 system prompt） | 否 |
+| 剪贴板 | `clipboard_tool` | navigator.clipboard API | 否 |
+| 文字转语音 | `text_to_speech` | Web Speech API (speechSynthesis) | 否 |
+| 询问用户 | `ask_user` | 自定义弹窗 + HITL 审批流程 | **是** |
+| 屏幕时间 | `get_screen_time` | Kotlin 原生插件（UsageStatsManager） | 否 |
+| 日历 | `calendar_query` / `calendar_create` | @capacitor/calendar 插件 | 仅创建 |
+
+**核心设计：**
+- 每个工具有独立开关，启用后才注入 LLM
+- 每个工具可展开，显示完整 system prompt 文本，用户可自定义覆盖
+- 默认提示词参考 RikkaHub 开源项目
+- 时间信息通过 systemPrompt 回调自动注入当前时间到 system prompt，LLM 无需调用即能感知时间
+- 需审批的工具（ask_user、calendar_create）走 HITL 流程：LLM 发起 → 暂停等待 → 用户确认/回答 → 继续生成
+- 所有本地工具定义在 `src/services/local-tools/` 目录下
+
 ---
 
 #### 2-4  记忆游廊 APP（Memory Gallery APP）
