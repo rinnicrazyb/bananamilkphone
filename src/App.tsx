@@ -15,6 +15,8 @@ import {
 import { themeEngine } from './services/theme-engine/index';
 import { getItem, setItem } from './services/sqlite/index';
 import type { ThemeConfig } from './types';
+import PhoneFrame from './components/PhoneFrame';
+import BackButtonHandler from './components/BackButtonHandler';
 import LauncherPage from './apps/launcher/pages/LauncherPage';
 import ThemePage from './apps/theme/pages/ThemePage';
 import AppIconsPage from './apps/theme/pages/AppIconsPage';
@@ -247,7 +249,10 @@ export default function App() {
 
   return (
     <BrowserRouter>
-      <AppRoutes />
+      <PhoneFrame>
+        <BackButtonHandler />
+        <AppRoutes />
+      </PhoneFrame>
     </BrowserRouter>
   );
 }

@@ -83,10 +83,7 @@
 | 分支 | HEAD | 说明 |
 |------|------|------|
 | `* main` | `8d52593` | **当前在用** — edge-to-edge 全屏，无本地工具 |
-| `kotlin-migration-backup` | `3712859` | Kotlin/Compose 原生迁移备份（bug 多已放弃） |
-| `feat/native-notification` | `1b6c940` | 旧版 LLM 流式通知分支 |
-| `fix-memorypage-thinkchain-autoscroll` | 较早 | MemoryPage 修复分支 |
-| `desktop-redesign` | 较早 | 桌面重写前备份 |
+
 
 ## 附：APK 打包
 

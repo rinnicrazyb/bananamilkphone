@@ -14,6 +14,8 @@ interface AppState {
   iconPresets: IconPreset[];
   /** 是否已从 SQLite 加载主题（防止 save effect 首次挂载覆盖） */
   _themeLoaded: boolean;
+  /** 设置APP当前子页面（null = 首页） */
+  settingsSubPage: string | null;
 
   // Actions
   registerApp: (app: AppMeta) => void;
@@ -24,6 +26,7 @@ interface AppState {
   addIconPreset: (preset: IconPreset) => void;
   deleteIconPreset: (id: string) => void;
   _setThemeLoaded: () => void;
+  setSettingsSubPage: (page: string | null) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -38,6 +41,7 @@ export const useAppStore = create<AppState>((set) => ({
   customIcons: {},
   iconPresets: [],
   _themeLoaded: false,
+  settingsSubPage: null,
 
   registerApp: (app) =>
     set((state) => {
@@ -84,4 +88,6 @@ export const useAppStore = create<AppState>((set) => ({
     })),
 
   _setThemeLoaded: () => set({ _themeLoaded: true }),
+
+  setSettingsSubPage: (page) => set({ settingsSubPage: page }),
 }));

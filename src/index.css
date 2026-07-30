@@ -25,7 +25,7 @@
   --app-wallpaper-opacity: 1;
   --app-wallpaper-blur: 0px;
 
-  /* 状态栏 */
+  /* 状态栏 — 紧凑模式 */
   --app-statusbar-height: 44px;
 
   /* 桌面 */
@@ -78,8 +78,7 @@ body {
   height: 100%;
   display: flex;
   flex-direction: column;
-  /* 全屏模式：系统状态栏 overlay 在上方，内容通过 safe-area 避开 */
-  padding-top: env(safe-area-inset-top, 0px);
+  /* 底部避开系统导航栏 */
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
@@ -93,6 +92,22 @@ body {
 ::-webkit-scrollbar-thumb {
   background: var(--app-border);
   border-radius: 2px;
+}
+
+/* ---- PhoneFrame 全局布局 ---- */
+.phone-frame {
+  position: relative;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.phone-frame__content {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 /* ---- 通用工具类 ---- */
@@ -120,7 +135,7 @@ body {
 }
 
 .launcher__wallpaper {
-  position: absolute;
+  position: fixed;
   inset: 0;
   background: var(--app-wallpaper) center/cover no-repeat;
   opacity: var(--app-wallpaper-opacity);
@@ -139,28 +154,54 @@ body {
   padding: 8px 12px calc(12px + env(safe-area-inset-bottom, 0px));
 }
 
-/* ---- 状态栏 ---- */
+/* ---- 状态栏（模拟）— 占据真机状态栏位置 ---- */
 .status-bar {
   position: relative;
   z-index: 2;
-  height: var(--app-statusbar-height);
+  flex-shrink: 0;
   display: flex;
   align-items: center;
+  gap: 4px;
   padding: 0 16px;
-  font-size: 14px;
+  /* 高度 = 真机状态栏高度，自适应（含 notch） */
+  height: env(safe-area-inset-top, 24px);
+  font-size: 13px;
   font-weight: 600;
   color: var(--app-text);
   background: transparent;
+  pointer-events: none;
+}
+
+.status-bar__time {
+  font-feature-settings: 'tnum';
 }
 
 .status-bar__spacer {
   flex: 1;
 }
 
+.status-bar__network {
+  display: flex;
+  align-items: center;
+  height: 16px;
+}
+
+.status-bar__charging {
+  display: flex;
+  align-items: center;
+  margin-right: 2px;
+  color: #27ae60;
+}
+
 .status-bar__battery {
   display: flex;
   align-items: center;
-  margin-left: 6px;
+}
+
+.status-bar__percent {
+  font-size: 11px;
+  margin-left: 2px;
+  font-feature-settings: 'tnum';
 }
 
 /* ---- APP 网格（响应式 4×6） ---- */

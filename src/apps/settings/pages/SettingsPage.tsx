@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   GearSix,
@@ -13,6 +12,7 @@ import {
   CaretRight,
   CaretLeft,
 } from '@phosphor-icons/react';
+import { useAppStore } from '../../../store/app-store';
 import { useSettingsStore } from '../../../store/settings-store';
 import type { SettingsSubPage } from '../types';
 import ApiSettings from '../components/ApiSettings';
@@ -123,7 +123,8 @@ function ToggleRow({
 /* ───── 主页面 ───── */
 export default function SettingsPage() {
   const navigate = useNavigate();
-  const [subPage, setSubPage] = useState<SettingsSubPage>(null);
+  const subPage = useAppStore((s) => s.settingsSubPage) as SettingsSubPage;
+  const setSubPage = useAppStore((s) => s.setSettingsSubPage);
   const notificationsEnabled = useSettingsStore((s) => s.notificationsEnabled);
   const setNotificationsEnabled = useSettingsStore((s) => s.setNotificationsEnabled);
 
@@ -217,12 +218,12 @@ export default function SettingsPage() {
 
       {/* 底部按钮 */}
       <div className="settings-page__footer">
-        <button className="theme-btn" onClick={() => window.history.back()}>
+        <button className="theme-btn" onClick={() => navigate('/', { replace: true })}>
           确认
         </button>
         <button
           className="theme-btn theme-btn--cancel"
-          onClick={() => window.history.back()}
+          onClick={() => navigate('/', { replace: true })}
         >
           取消
         </button>

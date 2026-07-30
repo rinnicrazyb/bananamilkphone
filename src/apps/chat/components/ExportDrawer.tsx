@@ -8,6 +8,8 @@
  */
 import { useState, useMemo } from 'react';
 import type { Message } from '../types';
+import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
+import { Share } from '@capacitor/share';
 
 interface Props {
   open: boolean;
@@ -33,10 +35,30 @@ export default function ExportDrawer({ open, messages, conversationTitle, onClos
     setSelected(prev => prev.size === displayMessages.length ? new Set() : new Set(displayMessages.map(m => m.id)));
   };
 
-  const handleExport = () => {
+  const handleExport = async () => {
     const selectedMsgs = displayMessages.filter(m => selected.has(m.id));
     const md = buildMarkdown(selectedMsgs, conversationTitle, includeReasoning);
-    downloadMarkdown(md);
+    const fileName = `chat-export-${new Date().toISOString().slice(0, 10)}.md`;
+
+    try {
+      // 写入缓存目录
+      await Filesystem.writeFile({
+        path: fileName,
+        data: md,
+        directory: Directory.Cache,
+        encoding: Encoding.UTF8,
+      });
+      // 获取文件 URI
+      const fileResult = await Filesystem.getUri({ path: fileName, directory: Directory.Cache });
+      // 调起系统分享/保存界面（用 files 参数传文件）
+      await Share.share({
+        title: `导出对话 - ${conversationTitle}`,
+        files: [fileResult.uri],
+        dialogTitle: '保存聊天记录',
+      });
+    } catch (e: any) {
+      alert('导出失败: ' + (e?.message || e));
+    }
     onClose();
   };
 
@@ -125,15 +147,3 @@ function buildMarkdown(messages: Message[], title: string, includeReasoning: boo
   return lines.join('\n');
 }
 
-function downloadMarkdown(md: string) {
-  const blob = new Blob([md], { type: 'text/markdown' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `chat-export-${new Date().toISOString().slice(0, 10)}.md`;
-  a.style.display = 'none';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
