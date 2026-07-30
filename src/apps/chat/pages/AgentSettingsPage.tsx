@@ -28,7 +28,7 @@ export default function AgentSettingsPage({ onBack }: Props) {
   const updateAgentSettings = useChatStore((s) => s.updateAgentSettings);
   const updateAgent = useChatStore((s) => s.updateAgent);
   const updateAgentDisplayConfig = useChatStore((s) => s.updateAgentDisplayConfig);
-  const deleteConversation = useChatStore((s) => s.deleteConversation);
+  const deleteAgent = useChatStore((s) => s.deleteAgent);
   const setShowAgentSettings = useChatStore((s) => s.setShowAgentSettings);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [customModel, setCustomModel] = useState(false);
@@ -43,10 +43,7 @@ export default function AgentSettingsPage({ onBack }: Props) {
   if (!agent) return null;
 
   const handleDelete = () => {
-    const agentConvIds = conversations
-      .filter((c) => c.agentId === agent.id)
-      .map((c) => c.id);
-    agentConvIds.forEach((id) => deleteConversation(id));
+    deleteAgent(agent.id);
     setShowAgentSettings(false);
   };
 

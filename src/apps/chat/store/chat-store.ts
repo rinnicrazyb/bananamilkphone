@@ -31,6 +31,7 @@ interface ChatState {
 
   setAgents: (agents: Agent[]) => void;
   addAgent: (agent: Agent) => void;
+  deleteAgent: (agentId: string) => void;
   addConversation: (conv: Conversation) => void;
   setActiveConversation: (id: string | null) => void;
   addMessage: (conversationId: string, msg: Message) => void;
@@ -76,6 +77,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   setAgents: (agents) => set({ agents }),
   addAgent: (agent) => set((s) => ({ agents: [...s.agents, agent] })),
+  deleteAgent: (aid) =>
+    set((s) => {
+      const { [aid]: _, ...restMemories } = s.memories;
+      const agentConvIds = s.conversations.filter(c => c.agentId === aid).map(c => c.id);
+      const restNodes = { ...s.messageNodes };
+      for (const cid of agentConvIds) delete restNodes[cid];
+      return {
+        agents: s.agents.filter(a => a.id !== aid),
+        conversations: s.conversations.filter(c => c.agentId !== aid),
+        messageNodes: restNodes,
+        messages: syncMsgs(restNodes),
+        memories: restMemories,
+        activeConversationId: agentConvIds.includes(s.activeConversationId ?? '') ? null : s.activeConversationId,
+      };
+    }),
 
   addConversation: (conv) =>
     set((s) => ({ conversations: [conv, ...s.conversations] })),
@@ -96,7 +112,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
       } else {
         newNodes = addNode(nodes, { ...msg, nodeId: msg.nodeId || `node-${msg.id}` });
       }
-      return { conversations: convs, ...withMsgs(s.messageNodes, convId, newNodes) };
+      const updatedConv = convs.find(c => c.id === convId);
+      const agents = updatedConv
+        ? s.agents.map(a => a.id === updatedConv.agentId ? { ...a, lastContactTime: Date.now() } : a)
+        : s.agents;
+      return { conversations: convs, agents, ...withMsgs(s.messageNodes, convId, newNodes) };
     }),
 
   updateMessageStatus: (msgId, status) =>
@@ -115,7 +135,25 @@ export const useChatStore = create<ChatState>((set, get) => ({
   deleteConversation: (id) =>
     set((s) => {
       const { [id]: _, ...rest } = s.messageNodes;
-      return { conversations: s.conversations.filter(c => c.id !== id), messageNodes: rest, messages: syncMsgs(rest), activeConversationId: s.activeConversationId === id ? null : s.activeConversationId };
+      const deletedConv = s.conversations.find(c => c.id === id);
+      const remainingConvs = s.conversations.filter(c => c.id !== id);
+      let updatedAgents = s.agents;
+      if (deletedConv) {
+        const sameAgentConvs = remainingConvs.filter(c => c.agentId === deletedConv.agentId);
+        const latestTs = sameAgentConvs.length > 0
+          ? Math.max(...sameAgentConvs.map(c => c.updatedAt))
+          : undefined;
+        updatedAgents = s.agents.map(a =>
+          a.id === deletedConv.agentId ? { ...a, lastContactTime: latestTs } : a
+        );
+      }
+      return {
+        conversations: remainingConvs,
+        messageNodes: rest,
+        messages: syncMsgs(rest),
+        activeConversationId: s.activeConversationId === id ? null : s.activeConversationId,
+        agents: updatedAgents,
+      };
     }),
 
   toggleConversationList: () => set((s) => ({ showConversationList: !s.showConversationList })),

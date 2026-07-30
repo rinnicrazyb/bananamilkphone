@@ -63,7 +63,7 @@
 
 ---
 
-## 当前 APP 状态（commit `8d52593`）
+## 当前 APP 状态（commit `74f758b`）
 
 | APP | 状态 | 功能 |
 |-----|------|------|
@@ -72,9 +72,9 @@
 | 世界书 APP | ✅ 正常 | 5 位置注入、书架、封面裁剪、JSON 导入导出 |
 | 设置 APP | ✅ 正常 | API 预设、MCP 双通道、WebDAV、备份 |
 | 主题 APP | ✅ 正常 | 壁纸裁剪、TTF 字体、图标预设、通知样式 |
-| 记忆游廊 APP | ⬜ 未开始 | |
+| 记忆游廊 APP | ✅ 首版完成 | 房间网格、游廊（树状+卡片+编辑）、审批（diff对比）、回收站 |
 
-**未实现**：本地工具（剪贴板/TTS/日历/屏幕时间）、主动消息（ForegroundService 推送）、壁纸模糊预览。
+**未实现**：本地工具（剪贴板/TTS/日历/屏幕时间）、主动消息（ForegroundService 推送）、壁纸模糊预览、记忆游廊的 tool call 注册。
 
 ---
 
@@ -82,7 +82,7 @@
 
 | 分支 | HEAD | 说明 |
 |------|------|------|
-| `* main` | `8d52593` | **当前在用** — edge-to-edge 全屏，无本地工具 |
+| `* main` | `74f758b` | **当前在用** — 记忆游廊首版，无本地工具 |
 
 
 ## 附：APK 打包
@@ -91,4 +91,8 @@
 export JAVA_HOME="/c/Program Files/Eclipse Adoptium/jdk-21.0.11.10-hotspot"
 npm run build && npx cap sync android && cd android && ./gradlew assembleDebug
 # APK: android/app/build/outputs/apk/debug/app-debug.apk
+
+---
+
+## Phase 3：记忆游廊 APP（2026-07-30）
 ```

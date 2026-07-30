@@ -27,9 +27,10 @@ import { useAppStore } from './store/app-store';
 import { usePersistence } from './services/persistence/use-persistence';
 import LorebookListPage from './apps/lorebook/pages/LorebookListPage';
 import LorebookDetailPage from './apps/lorebook/pages/LorebookDetailPage';
+import GalleryPage from './apps/memory-gallery/pages/GalleryPage';
+import RoomPage from './apps/memory-gallery/pages/RoomPage';
 
 // Placeholder stub pages
-const MemoryGallery = () => <div>Memory Gallery — 待开发</div>;
 const ArchiveStub = () => <div>Archive — 待开发</div>;
 const ArcadeStub = () => <div>Arcade — 待开发</div>;
 const TavernStub = () => <div>Tavern — 待开发</div>;
@@ -47,7 +48,8 @@ function AppRoutes() {
       <Route path="/settings" element={<SettingsPage />} />
       <Route path="/lorebook" element={<LorebookListPage />} />
       <Route path="/lorebook/:id" element={<LorebookDetailPage />} />
-      <Route path="/memory-gallery" element={<MemoryGallery />} />
+      <Route path="/memory-gallery" element={<GalleryPage />} />
+      <Route path="/memory-gallery/room/:roomId" element={<RoomPage />} />
       <Route path="/archive" element={<ArchiveStub />} />
       <Route path="/arcade" element={<ArcadeStub />} />
       <Route path="/tavern" element={<TavernStub />} />

@@ -19,8 +19,8 @@ export default function AgentSettingsPanel() {
   const updateAgentSettings = useChatStore((s) => s.updateAgentSettings);
   const updateAgent = useChatStore((s) => s.updateAgent);
   const updateAgentDisplayConfig = useChatStore((s) => s.updateAgentDisplayConfig);
+  const deleteAgent = useChatStore((s) => s.deleteAgent);
   const setShowAgentSettings = useChatStore((s) => s.setShowAgentSettings);
-  const deleteConversation = useChatStore((s) => s.deleteConversation);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [customModel, setCustomModel] = useState(false);
   const [cropSrc, setCropSrc] = useState<string | null>(null);
@@ -33,10 +33,7 @@ export default function AgentSettingsPanel() {
   if (!agent) return null;
 
   const handleDelete = () => {
-    const agentConvIds = conversations
-      .filter((c) => c.agentId === agent.id)
-      .map((c) => c.id);
-    agentConvIds.forEach((id) => deleteConversation(id));
+    deleteAgent(agent.id);
     setShowAgentSettings(false);
   };
 
